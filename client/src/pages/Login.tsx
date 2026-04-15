@@ -10,6 +10,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_link: "That sign-in link is invalid or has expired. Request a new one below.",
   account_disabled: "Your account has been deactivated. Contact contact@1giglabs.com.",
   session_failed: "Something went wrong while signing you in. Please try again.",
+  server_error: "The sign-in service hit an error. Please request a new link.",
 };
 
 function parseQuery(): URLSearchParams {

@@ -98,37 +98,49 @@ authRouter.get("/callback", async (req, res) => {
   const ip = getIp(req);
   const ua = req.headers["user-agent"];
 
-  if (!token) {
-    return res.redirect(`${APP_URL}/login?error=missing_token`);
-  }
+  // Build redirect targets as RELATIVE paths so they work even if APP_URL is
+  // unset. Relative 302s keep the browser on the current origin.
+  const loginWith = (code: string) => `/login?error=${code}`;
 
-  const user = await consumeSigninToken(token);
-  if (!user) {
-    await writeAuditLog("LINK_INVALID", `Invalid/expired token`, undefined, undefined, ip, ua);
-    return res.redirect(`${APP_URL}/login?error=invalid_link`);
-  }
+  try {
+    if (!token) return res.redirect(loginWith("missing_token"));
 
-  if (!user.isActive) {
-    await writeAuditLog("LINK_DENIED_INACTIVE", undefined, user.id, user.email, ip, ua);
-    return res.redirect(`${APP_URL}/login?error=account_disabled`);
-  }
-
-  await updateLastLogin(user.id);
-
-  (req.session as any).userId = user.id;
-  (req.session as any).email = user.email;
-  (req.session as any).isAdmin = isAdmin(user.email);
-
-  await writeAuditLog("LOGIN", undefined, user.id, user.email, ip, ua);
-
-  // Save session before redirect to ensure the cookie is written.
-  req.session.save((err) => {
-    if (err) {
-      console.error("session.save error:", err);
-      return res.redirect(`${APP_URL}/login?error=session_failed`);
+    const user = await consumeSigninToken(token);
+    if (!user) {
+      await writeAuditLog("LINK_INVALID", `Invalid/expired token`, undefined, undefined, ip, ua);
+      return res.redirect(loginWith("invalid_link"));
     }
-    res.redirect(`${APP_URL}/`);
-  });
+
+    if (!user.isActive) {
+      await writeAuditLog("LINK_DENIED_INACTIVE", undefined, user.id, user.email, ip, ua);
+      return res.redirect(loginWith("account_disabled"));
+    }
+
+    await updateLastLogin(user.id);
+
+    (req.session as any).userId = user.id;
+    (req.session as any).email = user.email;
+    (req.session as any).isAdmin = isAdmin(user.email);
+
+    await writeAuditLog("LOGIN", undefined, user.id, user.email, ip, ua);
+
+    // Save session before redirecting so the cookie is persisted.
+    req.session.save((err) => {
+      if (err) {
+        console.error("session.save error:", err);
+        return res.redirect(loginWith("session_failed"));
+      }
+      res.redirect("/");
+    });
+  } catch (err) {
+    // Never let the callback silently close the connection — always redirect.
+    console.error("callback handler error:", err);
+    try {
+      res.redirect(loginWith("server_error"));
+    } catch {
+      res.status(500).send("Sign-in failed. Please request a new link.");
+    }
+  }
 });
 
 // ─── Logout ───────────────────────────────────────────────────────────────────
