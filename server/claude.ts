@@ -269,7 +269,7 @@ Return ONLY this JSON:
   ]
 }`;
 
-  return callClaude(prompt, 2500);
+  return callClaude(prompt, 4000);
 }
 
 // ─── Investor Presentation ────────────────────────────────────────────────────
@@ -302,5 +302,5 @@ Return ONLY this JSON:
 
 Include 10-12 slides: cover, investment thesis, company overview, financial highlights, market opportunity, competitive position, strategic initiatives, SWOT, growth catalysts, risk factors, valuation summary, conclusion.`;
 
-  return callClaude(prompt, 2500);
+  return callClaude(prompt, 7000);
 }
