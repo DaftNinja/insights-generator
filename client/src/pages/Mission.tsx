@@ -1,171 +1,280 @@
-import { Layout, PageHeader } from "@/components/Layout";
+import { Link } from "wouter";
+import { Layout } from "@/components/Layout";
 
-const PHASES = [
-  { number: "01", title: "Input", desc: "Enter any company name" },
-  { number: "02", title: "Research", desc: "Claude analyses available intelligence" },
-  { number: "03", title: "Generate", desc: "Structured JSON report built across 10 sections" },
-  { number: "04", title: "Cache", desc: "Report stored — refreshed automatically every 2 months" },
-  { number: "05", title: "Activate", desc: "Add your sales brief for Sales Enablement" },
-  { number: "06", title: "Export", desc: "Download as PDF, PPTX, or HTML" },
+// ─── How We Got Here timeline ─────────────────────────────────────────────────
+
+const TIMELINE = [
+  {
+    tag: "FOUNDATION",
+    title: "AI-Powered Analysis Engine",
+    desc: "Built the core analysis engine using Claude (Anthropic) to generate comprehensive 10-section strategic reports covering financials, strategy, market position, and more.",
+    color: "border-blue-200 bg-blue-50/50",
+    tagColor: "text-blue-600",
+  },
+  {
+    tag: "DEPTH",
+    title: "Expanded Report Sections",
+    desc: "Added ESG & Sustainability, SWOT Analysis, Growth Opportunities, Risk Assessment, and Digital Transformation sections for truly comprehensive coverage.",
+    color: "border-violet-200 bg-violet-50/50",
+    tagColor: "text-violet-600",
+  },
+  {
+    tag: "SCALE",
+    title: "Batch Processing & Caching",
+    desc: "Introduced CSV batch upload for processing 20–50 companies simultaneously, plus 2-month intelligent caching to minimise AI costs and improve response times.",
+    color: "border-emerald-200 bg-emerald-50/50",
+    tagColor: "text-emerald-600",
+  },
+  {
+    tag: "EXPORT",
+    title: "Multi-Format Export",
+    desc: "Added professional PDF, PowerPoint (PPTX), and HTML export capabilities, enabling users to share and present findings in any format.",
+    color: "border-amber-200 bg-amber-50/50",
+    tagColor: "text-amber-600",
+  },
+  {
+    tag: "INTELLIGENCE",
+    title: "Contact Discovery",
+    desc: "Integrated Apollo.io as the primary B2B contact source with AI-powered fallback, CSV import/export, and contact verification tools.",
+    color: "border-blue-200 bg-blue-50/50",
+    tagColor: "text-blue-600",
+  },
+  {
+    tag: "PRESENTATION",
+    title: "Investor Presentation Generator",
+    desc: "Built a branded, 8-slide investor presentation generator with one-click PowerPoint export — turning raw analysis into boardroom-ready materials.",
+    color: "border-violet-200 bg-violet-50/50",
+    tagColor: "text-violet-600",
+  },
 ];
+
+// ─── Persona value cards ───────────────────────────────────────────────────────
 
 const PERSONAS = [
   {
-    role: "Account Executive",
-    pain: "Hours researching prospects before each meeting",
-    value: "Full strategic brief in 60 seconds — walk in informed",
-    saving: "~3 hrs/account",
-    icon: "🎯",
+    icon: "↗",
+    iconBg: "bg-blue-50 text-blue-600",
+    title: "Investors & Analysts",
+    desc: "Equity research reports, due diligence packs, and competitive benchmarking typically require teams of analysts working for weeks. Our platform delivers institutional-grade strategic analysis — covering financials, SWOT, ESG, risk, and growth opportunities — in a single request.",
+    tradCost: "$3,000 – $8,000",
+    tradTime: "2 – 4 weeks",
+    platformTime: "Minutes",
+    savings: "Up to 95%",
+    useCases: [
+      "Company due diligence reports",
+      "Portfolio-wide competitive screening",
+      "ESG & sustainability risk assessments",
+      "Market positioning and SWOT analysis",
+    ],
   },
   {
-    role: "Business Development",
-    pain: "No scalable way to qualify 50 targets quickly",
-    value: "Batch generate 50 reports overnight, prioritise by risk/opportunity",
-    saving: "~2 days/quarter",
-    icon: "📡",
+    icon: "○",
+    iconBg: "bg-violet-50 text-violet-600",
+    title: "Researchers & Consultants",
+    desc: "Market research firms charge thousands per report. Strategy consultants bill hundreds per hour for the same analysis. Our platform compresses weeks of desk research, data gathering, and report writing into a single automated workflow — without sacrificing depth.",
+    tradCost: "$5,000 – $15,000",
+    tradTime: "3 – 6 weeks",
+    platformTime: "Minutes",
+    savings: "Up to 97%",
+    useCases: [
+      "Industry landscape reports",
+      "Technology spend analysis",
+      "Digital transformation assessments",
+      "Multi-company batch analysis (up to 50 at once)",
+    ],
   },
   {
-    role: "Strategic Planner",
-    pain: "Competitive landscape analysis takes weeks",
-    value: "Instant market positioning, competitor threat matrix, SWOT",
-    saving: "~1 week/quarter",
-    icon: "🗺️",
+    icon: "⚇",
+    iconBg: "bg-emerald-50 text-emerald-600",
+    title: "Sales Teams",
+    desc: "Sales professionals spend hours researching prospects before outreach. Contact enrichment tools charge per-seat monthly fees. Our platform combines deep company intelligence with contact discovery — giving your team the strategic context they need to have meaningful conversations from the first touchpoint.",
+    tradCost: "$50 – $200 / user / month",
+    tradTime: "Hours per prospect",
+    platformTime: "Seconds",
+    savings: "Up to 90%",
+    useCases: [
+      "Pre-call company intelligence briefs",
+      "Key decision-maker identification",
+      "Competitive landscape for positioning",
+      "Exportable reports for client-facing presentations",
+    ],
   },
   {
-    role: "Sales Leadership",
-    pain: "Inconsistent account prep across the team",
-    value: "Standardised intelligence format every rep can use",
-    saving: "Consistent quality",
-    icon: "📊",
+    icon: "◧",
+    iconBg: "bg-amber-50 text-amber-600",
+    title: "Marketing Professionals",
+    desc: "Competitive analysis, market sizing, and brand positioning projects are expensive agency engagements. Our platform delivers the same strategic intelligence that informs marketing campaigns — from market analysis to growth opportunities — at a fraction of the cost and turnaround time.",
+    tradCost: "$5,000 – $20,000",
+    tradTime: "4 – 8 weeks",
+    platformTime: "Minutes",
+    savings: "Up to 96%",
+    useCases: [
+      "Competitive landscape and positioning",
+      "Market opportunity analysis",
+      "Industry trend identification",
+      "Branded investor-quality presentations",
+    ],
   },
 ];
+
+// ─── Bottom-line stats ────────────────────────────────────────────────────────
+
+const STATS = [
+  { value: "10", label: "Report Sections" },
+  { value: "3", label: "Export Formats" },
+  { value: "50", label: "Companies per Batch" },
+  { value: "~2 min", label: "Per Report" },
+];
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function Mission() {
   return (
     <Layout>
-      <PageHeader
-        label="Platform Mission"
-        title="From Insight to Action"
-        subtitle="Why we built 1GigLabs Insight Generator — and who it's for."
-      />
 
-      {/* Problem statement */}
-      <section className="mb-16 animate-fade-up">
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-5 sm:p-8 md:p-12">
-          <div className="max-w-2xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-800/50 bg-amber-950/30 px-3 py-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              <span className="font-mono text-xs text-amber-400 uppercase tracking-widest">The Problem</span>
-            </div>
-            <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-4 md:text-3xl">
-              Strategic intelligence is expensive, slow, and inconsistent.
-            </h2>
-            <p className="text-[var(--text-secondary)] leading-relaxed mb-4">
-              Enterprise sales teams spend hours — sometimes days — manually researching prospects. They piece together data from LinkedIn, annual reports, press releases, and analyst briefings to prepare for a single meeting. Smaller teams can't afford dedicated research analysts. The result: inconsistent prep quality, missed context, and lost deals.
-            </p>
-            <p className="text-[var(--text-secondary)] leading-relaxed">
-              1GigLabs Insight Generator solves this by automating the entire intelligence workflow. From a single company name, it generates a board-ready strategic brief in under 60 seconds — covering financials, leadership, market position, technology estate, ESG profile, SWOT analysis, growth opportunities, and risk landscape.
-            </p>
-          </div>
+      {/* ── Our Mission ───────────────────────────────────────────────────── */}
+      <section className="mb-20 animate-fade-up text-center max-w-3xl mx-auto">
+        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+          <span className="text-xs font-medium text-blue-700 uppercase tracking-widest">Our Mission</span>
         </div>
+        <h1 className="text-3xl font-bold text-[var(--text-primary)] sm:text-4xl md:text-5xl leading-tight mb-6">
+          To democratise strategic business intelligence
+        </h1>
+        <p className="text-lg text-[var(--text-secondary)] leading-relaxed mb-4">
+          Replacing weeks of expensive analyst work with AI-powered reports delivered in minutes — making institutional-grade company analysis accessible to every investor, researcher, sales professional, and marketer.
+        </p>
+        <p className="text-[var(--text-secondary)] leading-relaxed">
+          We believe that deep company insight should not be locked behind six-figure consulting fees or month-long research cycles. By combining the latest advances in AI with structured analytical frameworks, we deliver the same depth of analysis that Fortune 500 strategy teams rely on — at a fraction of the cost and turnaround time.
+        </p>
       </section>
 
-      {/* How it works - phases */}
-      <section className="mb-16">
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-[var(--text-primary)]">How it works</h2>
-          <p className="text-[var(--text-secondary)] mt-1">Six phases from input to action</p>
+      {/* ── How We Got Here ───────────────────────────────────────────────── */}
+      <section className="mb-20">
+        <div className="mb-10 text-center">
+          <h2 className="text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">How We Got Here</h2>
+          <p className="mt-2 text-[var(--text-secondary)]">
+            Built through rapid iteration, each phase added a new layer of capability — transforming a simple analysis tool into a full-stack business intelligence platform.
+          </p>
         </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          {PHASES.map((phase, i) => (
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {TIMELINE.map((item, i) => (
             <div
-              key={phase.number}
-              className="card text-center animate-fade-up relative"
+              key={item.tag}
+              className={`rounded-xl border p-6 animate-fade-up ${item.color}`}
               style={{ animationDelay: `${i * 80}ms` }}
             >
-              {i < PHASES.length - 1 && (
-                <div className="hidden lg:block absolute top-8 -right-2 text-[var(--border)] text-xl z-10">→</div>
-              )}
-              <div className="font-mono text-2xl font-bold text-[var(--primary)]/30 mb-2">{phase.number}</div>
-              <div className="font-display text-sm font-bold text-[var(--text-primary)] mb-1">{phase.title}</div>
-              <div className="text-xs text-[var(--text-muted)] leading-relaxed">{phase.desc}</div>
+              <span className={`text-xs font-bold uppercase tracking-widest ${item.tagColor}`}>{item.tag}</span>
+              <h3 className="mt-2 mb-3 text-base font-bold text-[var(--text-primary)]">{item.title}</h3>
+              <p className="text-sm text-[var(--text-secondary)] leading-relaxed">{item.desc}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* Personas */}
-      <section className="mb-16">
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-[var(--text-primary)]">Built for these users</h2>
-          <p className="text-[var(--text-secondary)] mt-1">The professionals who benefit most</p>
+      {/* ── The Value We Deliver ──────────────────────────────────────────── */}
+      <section className="mb-20">
+        <div className="mb-10 text-center">
+          <h2 className="text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">The Value We Deliver</h2>
+          <p className="mt-2 text-[var(--text-secondary)]">
+            Traditional business intelligence is slow and expensive. Here is how our platform compares across four key professional personas.
+          </p>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {PERSONAS.map((persona, i) => (
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {PERSONAS.map((p, i) => (
             <div
-              key={persona.role}
-              className="card-hover animate-fade-up"
+              key={p.title}
+              className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-6 animate-fade-up"
               style={{ animationDelay: `${i * 100}ms` }}
             >
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 border border-blue-200 text-2xl">
-                  {persona.icon}
+              {/* Title row */}
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-lg font-bold ${p.iconBg}`}>
+                  {p.icon}
                 </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-display text-base font-bold text-[var(--text-primary)]">{persona.role}</h3>
-                    <span className="badge badge-blue">{persona.saving}</span>
-                  </div>
-                  <p className="text-xs text-red-400/80 mb-2">
-                    <span className="font-semibold">Pain: </span>{persona.pain}
-                  </p>
-                  <p className="text-xs text-[var(--primary)]/80">
-                    <span className="font-semibold">Value: </span>{persona.value}
-                  </p>
+                <h3 className="text-base font-bold text-[var(--text-primary)]">{p.title}</h3>
+              </div>
+
+              {/* Description */}
+              <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-5">{p.desc}</p>
+
+              {/* Stats grid */}
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                <div className="rounded-lg bg-[var(--bg-secondary)] p-3">
+                  <div className="text-xs text-[var(--text-muted)] mb-0.5">Traditional Cost</div>
+                  <div className="text-sm font-bold text-[var(--text-primary)]">{p.tradCost}</div>
                 </div>
+                <div className="rounded-lg bg-[var(--bg-secondary)] p-3">
+                  <div className="text-xs text-[var(--text-muted)] mb-0.5">Traditional Time</div>
+                  <div className="text-sm font-bold text-[var(--text-primary)]">{p.tradTime}</div>
+                </div>
+                <div className="rounded-lg bg-blue-50 border border-blue-100 p-3">
+                  <div className="text-xs text-blue-600 mb-0.5">With Our Platform</div>
+                  <div className="text-sm font-bold text-blue-700">{p.platformTime}</div>
+                </div>
+                <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3">
+                  <div className="text-xs text-emerald-600 mb-0.5">Cost Savings</div>
+                  <div className="text-sm font-bold text-emerald-700">{p.savings}</div>
+                </div>
+              </div>
+
+              {/* Use cases */}
+              <div>
+                <div className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest mb-2">Key Use Cases</div>
+                <ul className="space-y-1">
+                  {p.useCases.map((uc) => (
+                    <li key={uc} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
+                      <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[var(--primary)]" />
+                      {uc}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* Tech stack */}
-      <section className="mb-16">
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-8">
-          <h2 className="text-xl font-bold text-[var(--text-primary)] mb-6">Technology Stack</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {STACK.map(({ name, role, color }) => (
-              <div key={name} className="flex items-start gap-2 p-3 rounded-lg bg-[var(--bg-secondary)]">
-                <span className={`h-2 w-2 shrink-0 rounded-full mt-1.5 ${color}`} />
-                <div>
-                  <div className="text-xs font-bold text-[var(--text-primary)]">{name}</div>
-                  <div className="text-xs text-[var(--text-muted)]">{role}</div>
-                </div>
+      {/* ── The Bottom Line ───────────────────────────────────────────────── */}
+      <section className="mb-12">
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] px-8 py-12 text-center">
+          <h2 className="text-2xl font-bold text-[var(--text-primary)] sm:text-3xl mb-4">The Bottom Line</h2>
+          <p className="max-w-2xl mx-auto text-[var(--text-secondary)] leading-relaxed mb-10">
+            What once required a team of analysts, weeks of research, and tens of thousands in consulting fees can now be accomplished by a single person in minutes. Our platform does not just save money — it fundamentally changes who can access strategic business intelligence and how quickly they can act on it.
+          </p>
+
+          {/* Stats */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-10">
+            {STATS.map((s) => (
+              <div key={s.label}>
+                <div className="text-3xl font-bold text-[var(--primary)] sm:text-4xl">{s.value}</div>
+                <div className="mt-1 text-xs text-[var(--text-muted)]">{s.label}</div>
               </div>
             ))}
           </div>
+
+          <Link href="/">
+            <a className="btn-primary inline-flex items-center gap-2 px-6 py-3">
+              Get Started — Generate a Report
+            </a>
+          </Link>
         </div>
       </section>
 
-      {/* Disclaimer */}
-      <section>
+      {/* ── Disclaimer & footer tagline ───────────────────────────────────── */}
+      <section className="space-y-4">
         <div className="rounded-xl border border-amber-900/30 bg-amber-950/10 px-6 py-4">
           <p className="text-xs text-amber-400/80 leading-relaxed">
-            <strong>Data Disclaimer:</strong> Reports are generated using AI (Claude) and are intended for informational and strategic planning purposes. Data may not reflect the most current financials or public filings. Always verify critical data points against primary sources before making investment or business decisions.
+            <strong>Data Disclaimer:</strong> Reports are generated using AI (Claude by Anthropic) and are intended for informational and strategic planning purposes. Data may not reflect the most current financials or public filings. Always verify critical data points against primary sources before making investment or business decisions.
           </p>
         </div>
+        <p className="text-center text-xs text-[var(--text-muted)]">
+          Built by 1GigLabs — Strategic Business Intelligence, Powered by AI
+        </p>
       </section>
+
     </Layout>
   );
 }
-
-const STACK = [
-  { name: "Claude (Anthropic)", role: "AI report generation", color: "bg-emerald-400" },
-  { name: "React + TypeScript", role: "Frontend UI", color: "bg-blue-400" },
-  { name: "Express 5", role: "API server", color: "bg-emerald-400" },
-  { name: "PostgreSQL", role: "Report storage", color: "bg-blue-400" },
-  { name: "Drizzle ORM", role: "Type-safe DB", color: "bg-violet-400" },
-  { name: "Vite", role: "Build tooling", color: "bg-amber-400" },
-  { name: "Recharts", role: "Data visualisation", color: "bg-blue-400" },
-  { name: "Railway", role: "Cloud deployment", color: "bg-violet-400" },
-];
