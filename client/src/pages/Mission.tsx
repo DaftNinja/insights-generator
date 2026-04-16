@@ -266,9 +266,13 @@ export function Mission() {
       {/* ── Disclaimer & footer tagline ───────────────────────────────────── */}
       <section className="space-y-4">
         <div className="rounded-xl border border-amber-900/30 bg-amber-950/10 px-6 py-4">
-          <p className="text-xs text-amber-400/90 leading-relaxed">
-            <strong>Data Disclaimer:</strong> Reports are generated using AI (Claude by Anthropic) and are intended for informational and strategic planning purposes. Data may not reflect the most current financials or public filings. Always verify critical data points against primary sources before making investment or business decisions.
-          </p>
+          <p className="text-sm text-amber-100 leading-relaxed">
+            <strong className="font-semibold text-amber-200">Data disclaimer:</strong>{" "}
+            AI-generated content for strategic guidance only.
+            </p>
+            <p className="text-sm text-amber-100 leading-relaxed">
+           Data may be outdated or incomplete. Verify critical information against primary sources before making   decisions.
+            </p>
         </div>
         <p className="text-center text-xs text-[var(--text-muted)]">
           Built by 1GigLabs — Strategic Business Intelligence, Powered by AI
