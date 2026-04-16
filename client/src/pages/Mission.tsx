@@ -265,16 +265,13 @@ export function Mission() {
 
       {/* ── Disclaimer & footer tagline ───────────────────────────────────── */}
       <section className="space-y-4">
-        <div className="rounded-xl border border-amber-900/30 bg-amber-950/10 px-6 py-4">
-          <p className="text-sm text-amber-100 leading-relaxed">
-            <strong className="font-semibold text-amber-200">Data disclaimer:</strong>{" "}
-            AI-generated content for strategic guidance only.
-            </p>
-            <p className="text-sm text-amber-100 leading-relaxed">
-           Data may be outdated or incomplete. Verify critical information against primary sources before making   decisions.
-            </p>
-        </div>
-        <p className="text-center text-xs text-[var(--text-muted)]">
+        <div className="rounded-xl border border-amber-500/40 bg-amber-950 px-6 py-4">
+  <p className="text-sm text-amber-200 leading-relaxed">
+    <strong className="font-semibold text-amber-300">Data disclaimer:</strong>{" "}
+    AI-generated content for strategic guidance only. Data may be outdated or incomplete.
+    Verify critical information against primary sources before making decisions.
+  </p>
+</div>        <p className="text-center text-xs text-[var(--text-muted)]">
           Built by 1GigLabs — Strategic Business Intelligence, Powered by AI
         </p>
       </section>
