@@ -266,7 +266,7 @@ export function Mission() {
       {/* ── Disclaimer & footer tagline ───────────────────────────────────── */}
       <section className="space-y-4">
         <div className="rounded-xl border border-amber-900/30 bg-amber-950/10 px-6 py-4">
-          <p className="text-xs text-amber-400/80 leading-relaxed">
+          <p className="text-xs text-amber-400/90 leading-relaxed">
             <strong>Data Disclaimer:</strong> Reports are generated using AI (Claude by Anthropic) and are intended for informational and strategic planning purposes. Data may not reflect the most current financials or public filings. Always verify critical data points against primary sources before making investment or business decisions.
           </p>
         </div>
