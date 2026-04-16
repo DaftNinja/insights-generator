@@ -265,9 +265,9 @@ export function Mission() {
 
       {/* ── Disclaimer & footer tagline ───────────────────────────────────── */}
       <section className="space-y-4">
-        <div className="rounded-xl border border-amber-500/40 bg-amber-950 px-6 py-4">
-  <p className="text-sm text-amber-200 leading-relaxed">
-    <strong className="font-semibold text-amber-300">Data disclaimer:</strong>{" "}
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-6 py-4">
+  <p className="text-sm text-amber-900 leading-relaxed">
+    <strong className="font-semibold">Data disclaimer:</strong>{" "}
     AI-generated content for strategic guidance only. Data may be outdated or incomplete.
     Verify critical information against primary sources before making decisions.
   </p>
