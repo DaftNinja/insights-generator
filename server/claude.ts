@@ -264,11 +264,10 @@ Return ONLY this JSON:
 export async function generateReport(companyName: string): Promise<unknown> {
   const start = Date.now();
 
-  // Fire both halves simultaneously — total time = max(A, B) not A+B
-  const [partA, partB] = await Promise.all([
-    generatePartA(companyName),
-    generatePartB(companyName),
-  ]);
+  // Sequential — parallel calls compete for the 30k input token/min bucket and rate-limit.
+  // Small time cost (~5-10s extra) but reliable on build-tier API limits.
+  const partA = await generatePartA(companyName);
+  const partB = await generatePartB(companyName);
 
   console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s`);
 
