@@ -4,28 +4,63 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// ─── Model ────────────────────────────────────────────────────────────────────
-// haiku-4-5: ~5-10s per call vs ~25-40s for sonnet. Same quality for structured JSON.
-const MODEL = "claude-haiku-4-5";
+// ─── Models ───────────────────────────────────────────────────────────────────
+const MODEL_GROUNDED = "claude-sonnet-4-20250514"; // web search needs Sonnet
+const MODEL_FAST = "claude-haiku-4-5-20251001";    // Part B — no factual recall needed
 
 const SYSTEM = `You are an elite strategic intelligence analyst.
 Respond with ONLY valid JSON — no prose, no markdown fences, no explanation.
 Use real accurate data for well-known companies. Estimates for smaller ones.
+CRITICAL: For CEO and key executives, only provide names you are highly confident are currently accurate.
+If uncertain about the current CEO, set "ceo" to "See company website for current CEO".
+Never confuse executives across different companies.
 All currency in USD unless the company primarily operates in another currency.
 Dates in dd/mm/yyyy format.
 Be concise — keep string values short (1-2 sentences max), keep arrays to 3-5 items max.`;
 
-// ─── Shared caller ────────────────────────────────────────────────────────────
+// ─── Grounded caller (Sonnet + web search) — used for Part A ─────────────────
+
+async function callClaudeGrounded(prompt: string, maxTokens: number): Promise<unknown> {
+  const message = await client.messages.create({
+    model: MODEL_GROUNDED,
+    max_tokens: maxTokens,
+    system: SYSTEM,
+    tools: [{ type: "web_search_20250305", name: "web_search" }],
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  if (message.stop_reason === "max_tokens") {
+    throw new Error("Response was too long and got cut off. Please try again.");
+  }
+
+  // Extract text blocks only — web search adds tool_use/tool_result blocks too
+  const text = message.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map(b => b.text)
+    .join("");
+
+  if (!text) throw new Error("Empty response from Claude API");
+
+  const cleaned = text.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    console.error("JSON parse failed. Raw:", cleaned.slice(0, 500));
+    throw new Error("Failed to parse API response. Please try again.");
+  }
+}
+
+// ─── Fast caller (Haiku, no tools) — used for Part B ─────────────────────────
 
 async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
   const message = await client.messages.create({
-    model: MODEL,
+    model: MODEL_FAST,
     max_tokens: maxTokens,
     system: SYSTEM,
     messages: [{ role: "user", content: prompt }],
   });
 
-  // Detect truncation before trying to parse
   if (message.stop_reason === "max_tokens") {
     console.error(`Response truncated at ${maxTokens} tokens — increase max_tokens`);
     throw new Error("Response was too long and got cut off. Please try again.");
@@ -48,6 +83,8 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
 
 async function generatePartA(companyName: string): Promise<unknown> {
   const prompt = `Generate strategic intelligence PART A for: ${companyName}
+
+Search the web for the current CEO, key executives, and recent financial data before responding.
 
 Return ONLY this JSON:
 {
@@ -113,7 +150,7 @@ Return ONLY this JSON:
   }
 }`;
 
-  return callClaude(prompt, 5000);
+  return callClaudeGrounded(prompt, 5000); // ← grounded: Sonnet + web search
 }
 
 // ─── Report Part B: tech + ESG + SWOT + growth + risk + digital ──────────────
@@ -205,7 +242,7 @@ Return ONLY this JSON:
   }
 }`;
 
-  return callClaude(prompt, 5000);
+  return callClaude(prompt, 5000); // ← fast: Haiku, no web search needed
 }
 
 // ─── Public: generate full report (parallel) ──────────────────────────────────
@@ -219,7 +256,7 @@ export async function generateReport(companyName: string): Promise<unknown> {
     generatePartB(companyName),
   ]);
 
-  console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (parallel Haiku)`);
+  console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s`);
 
   return { ...(partA as object), ...(partB as object) };
 }
