@@ -19,7 +19,7 @@ If uncertain about the current CEO, set "ceo" to "See company website for curren
 Never confuse executives across different companies.
 All currency in USD unless the company primarily operates in another currency.
 Dates in dd/mm/yyyy format.
-Be concise — keep string values short (1-2 sentences max), keep arrays to 3-5 items max.`;
+Be concise — keep string values short (1-2 sentences max), keep arrays to 3-5 items max except keyExecutives which should have up to 10 entries.`;
 
 // ─── CEO lookup via web search (minimal token footprint) ──────────────────────
 // Uses web search only to resolve the current CEO, then discards the search context.
@@ -89,6 +89,7 @@ async function generatePartA(companyName: string): Promise<unknown> {
   const prompt = `Generate strategic intelligence PART A for: ${companyName}
 
 The current CEO is: ${currentCEO} — use this exact name in the executiveSummary.ceo field.
+For keyExecutives, include up to 10 real senior leaders (C-suite, division heads, regional presidents). Real names only — omit the field entirely if fewer than 3 are known.
 
 Return ONLY this JSON:
 {
@@ -100,7 +101,7 @@ Return ONLY this JSON:
     "founded": "Year",
     "employees": "e.g. 250,000",
     "ceo": "Full name",
-    "keyExecutives": [{"name": "Name", "title": "Title"}],
+    "keyExecutives": [{"name": "Name", "title": "Title"}, {"name": "Name", "title": "Title"}, {"name": "Name", "title": "Title"}],
     "stockExchange": "e.g. NYSE: AAPL or N/A if private",
     "highlights": ["Key highlight 1", "Key highlight 2", "Key highlight 3", "Key highlight 4"],
     "analystRating": "e.g. Buy / Overweight / Hold",
