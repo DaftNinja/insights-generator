@@ -9,8 +9,7 @@ const MODEL_GROUNDED = "claude-haiku-4-5-20251001";
 const MODEL_FAST     = "claude-haiku-4-5-20251001";
 
 // ─── Financial Modeling Prep (FMP) ───────────────────────────────────────────
-// Single integration covering financials (replaces Alpha Vantage) +
-// ESG scores (replaces ESG Enterprise). One key, one dependency.
+// Single integration covering financials and ESG scores. One key, one dependency.
 
 const FMP_KEY  = process.env.FMP_API_KEY ?? "";
 const FMP_BASE = "https://financialmodelingprep.com/api";
