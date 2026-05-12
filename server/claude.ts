@@ -19,7 +19,7 @@ If uncertain about the current CEO, set "ceo" to "See company website for curren
 Never confuse executives across different companies.
 All currency in USD unless the company primarily operates in another currency.
 Dates in dd/mm/yyyy format.
-Be concise — keep string values short (1-2 sentences max), keep arrays to 3-5 items max except keyExecutives which should have up to 10 entries.`;
+Be concise — keep string values short (1-2 sentences max), keep arrays to 3-5 items max except keyExecutives (3-8 entries, verified names only).`;
 
 // ─── CEO lookup via web search (minimal token footprint) ──────────────────────
 // Uses web search only to resolve the current CEO, then discards the search context.
@@ -88,8 +88,8 @@ async function generatePartA(companyName: string): Promise<unknown> {
 
   const prompt = `Generate strategic intelligence PART A for: ${companyName}
 
-The current CEO is: ${currentCEO} — use this exact name in the executiveSummary.ceo field.
-For keyExecutives, include up to 10 real senior leaders (C-suite, division heads, regional presidents). Real names only — omit the field entirely if fewer than 3 are known.
+The current CEO is: ${currentCEO} — use this exact name in the executiveSummary.ceo field. Do NOT include the CEO again in keyExecutives.
+For keyExecutives: include between 3 and 8 other senior leaders you are certain exist (CFO, COO, CTO, division presidents, etc). STRICT RULES: real verified names only — if uncertain about a person, omit them entirely. Never invent, guess, or recombine names. Quality over quantity — 4 accurate entries is better than 8 with errors.
 
 Return ONLY this JSON:
 {
