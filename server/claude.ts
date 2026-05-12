@@ -8,178 +8,237 @@ const client = new Anthropic({
 const MODEL_GROUNDED = "claude-haiku-4-5-20251001";
 const MODEL_FAST     = "claude-haiku-4-5-20251001";
 
-// ─── Alpha Vantage ────────────────────────────────────────────────────────────
-const AV_KEY  = process.env.ALPHA_VANTAGE_API_KEY ?? "";
-const AV_BASE = "https://www.alphavantage.co/query";
+// ─── Financial Modeling Prep (FMP) ───────────────────────────────────────────
+// Single integration covering financials (replaces Alpha Vantage) +
+// ESG scores (replaces ESG Enterprise). One key, one dependency.
 
-export interface AVFinancials {
+const FMP_KEY  = process.env.FMP_API_KEY ?? "";
+const FMP_BASE = "https://financialmodelingprep.com/api";
+
+// ── Shared types ──────────────────────────────────────────────────────────────
+
+export interface FMPFinancials {
   ticker:          string;
   fiscalYear:      string;
   revenue:         string;
   revenueGrowth:   string;
   netIncome:       string;
   ebitda:          string;
+  grossMargin:     string;
+  operatingMargin: string;
   marketCap:       string;
   stockPrice:      string;
   peRatio:         string;
   epsAnnual:       string;
-  grossMargin:     string;
-  operatingMargin: string;
   analystTarget:   string;
   analystRating:   string;
   revenueHistory:  { year: string; revenue: string; growth: string }[];
 }
 
-// ─── Alpha Vantage: resolve company name → best-match ticker ──────────────────
-
-async function resolveTickerSymbol(companyName: string): Promise<string | null> {
-  if (!AV_KEY) {
-    console.warn("ALPHA_VANTAGE_API_KEY not set — skipping AV lookup");
-    return null;
-  }
-  try {
-    const url  = `${AV_BASE}?function=SYMBOL_SEARCH&keywords=${encodeURIComponent(companyName)}&apikey=${AV_KEY}`;
-    const res  = await fetch(url);
-    const data = await res.json() as {
-      bestMatches?: { "1. symbol": string; "3. type": string; "4. region": string }[];
-    };
-
-    if (!data.bestMatches?.length) return null;
-
-    // Prefer US equity — first matching entry wins
-    const equity = data.bestMatches.find(
-      m => m["3. type"] === "Equity" && m["4. region"] === "United States"
-    ) ?? data.bestMatches[0];
-
-    const ticker = equity["1. symbol"];
-    console.log(`📈 Resolved "${companyName}" → ${ticker}`);
-    return ticker;
-  } catch (err) {
-    console.warn(`Ticker resolution failed for "${companyName}":`, err);
-    return null;
-  }
+export interface FMPESGData {
+  ticker:             string;
+  companyName:        string;
+  esgScore:           number;   // 0–100 composite
+  environmentScore:   number;
+  socialScore:        number;
+  governanceScore:    number;
+  esgRating:          string;   // e.g. "A", "BBB"
+  esgRisk:            string;   // e.g. "Low", "Medium", "High"
+  lastUpdated:        string;
 }
 
-// ─── Alpha Vantage: fetch OVERVIEW + INCOME_STATEMENT in parallel ─────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function fetchAVFinancials(ticker: string): Promise<AVFinancials | null> {
-  if (!AV_KEY) return null;
+function fmt(n: number | undefined | null): string {
+  if (n == null || isNaN(n)) return "N/A";
+  if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+  if (Math.abs(n) >= 1e9)  return `$${(n / 1e9).toFixed(1)}B`;
+  if (Math.abs(n) >= 1e6)  return `$${(n / 1e6).toFixed(0)}M`;
+  return `$${n.toLocaleString()}`;
+}
+
+function fmtPct(n: number | undefined | null): string {
+  if (n == null || isNaN(n)) return "N/A";
+  return `${(n * 100).toFixed(1)}%`;
+}
+
+async function fmpGet<T>(path: string): Promise<T | null> {
+  if (!FMP_KEY) return null;
   try {
-    const [ovRes, incRes] = await Promise.all([
-      fetch(`${AV_BASE}?function=OVERVIEW&symbol=${ticker}&apikey=${AV_KEY}`),
-      fetch(`${AV_BASE}?function=INCOME_STATEMENT&symbol=${ticker}&apikey=${AV_KEY}`),
-    ]);
-
-    const ov  = await ovRes.json()  as Record<string, string>;
-    const inc = await incRes.json() as { annualReports?: Record<string, string>[] };
-
-    // AV returns {"Note":"..."} or {"Information":"..."} on rate-limit / bad key
-    if (ov["Note"] || ov["Information"] || !ov["Symbol"]) {
-      console.warn(`AV OVERVIEW unavailable for ${ticker}:`, ov["Note"] ?? ov["Information"]);
+    const res = await fetch(`${FMP_BASE}${path}&apikey=${FMP_KEY}`);
+    if (!res.ok) {
+      console.warn(`FMP ${path} → ${res.status}`);
       return null;
     }
-
-    const reports = inc.annualReports ?? [];
-
-    // ── Format raw number strings → readable "$X.XB / $X.XM" ────────────────
-    const fmt = (raw: string | undefined): string => {
-      const n = parseFloat(raw ?? "");
-      if (isNaN(n)) return "N/A";
-      if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
-      if (Math.abs(n) >= 1e9)  return `$${(n / 1e9).toFixed(1)}B`;
-      if (Math.abs(n) >= 1e6)  return `$${(n / 1e6).toFixed(0)}M`;
-      return `$${n.toLocaleString()}`;
-    };
-
-    const fmtPct = (raw: string | undefined): string => {
-      const n = parseFloat(raw ?? "");
-      return isNaN(n) ? "N/A" : `${(n * 100).toFixed(1)}%`;
-    };
-
-    const fmtPE = (raw: string | undefined): string => {
-      const n = parseFloat(raw ?? "");
-      return isNaN(n) ? "N/A" : `${n.toFixed(1)}x`;
-    };
-
-    // ── Revenue history — most recent 4 years, returned chronologically ───────
-    const revenueHistory = reports.slice(0, 4).map((r, i) => {
-      const year    = r["fiscalDateEnding"]?.slice(0, 4) ?? "N/A";
-      const rev     = parseFloat(r["totalRevenue"] ?? "");
-      const prevRev = parseFloat(reports[i + 1]?.["totalRevenue"] ?? "");
-      const growth  = (!isNaN(rev) && !isNaN(prevRev) && prevRev !== 0)
-        ? `${rev > prevRev ? "+" : ""}${(((rev - prevRev) / prevRev) * 100).toFixed(1)}%`
-        : "N/A";
-      return { year, revenue: fmt(r["totalRevenue"]), growth };
-    }).reverse();
-
-    // ── YoY revenue growth (latest vs prior year) ────────────────────────────
-    const latestRev = parseFloat(reports[0]?.["totalRevenue"] ?? "");
-    const priorRev  = parseFloat(reports[1]?.["totalRevenue"] ?? "");
-    const yoyGrowth = (!isNaN(latestRev) && !isNaN(priorRev) && priorRev !== 0)
-      ? `${latestRev > priorRev ? "+" : ""}${(((latestRev - priorRev) / priorRev) * 100).toFixed(1)}% YoY`
-      : "N/A";
-
-    // ── Fiscal year label ────────────────────────────────────────────────────
-    const fiscalYear = reports[0]?.["fiscalDateEnding"]
-      ? `FY${reports[0]["fiscalDateEnding"].slice(0, 4)}`
-      : `FY${ov["LatestQuarter"]?.slice(0, 4) ?? new Date().getFullYear()}`;
-
-    // ── Analyst rating summary ────────────────────────────────────────────────
-    const sb    = parseInt(ov["AnalystRatingStrongBuy"]  ?? "0");
-    const b     = parseInt(ov["AnalystRatingBuy"]        ?? "0");
-    const h     = parseInt(ov["AnalystRatingHold"]       ?? "0");
-    const s     = parseInt(ov["AnalystRatingSell"]       ?? "0")
-                + parseInt(ov["AnalystRatingStrongSell"] ?? "0");
-    const total = sb + b + h + s;
-    const analystRating = total > 0
-      ? (() => {
-          const bullPct = ((sb + b) / total) * 100;
-          if (bullPct >= 70) return `Buy (${Math.round(bullPct)}% bullish, ${total} analysts)`;
-          if (bullPct >= 50) return `Hold/Buy (${Math.round(bullPct)}% bullish, ${total} analysts)`;
-          return `Hold (${Math.round(bullPct)}% bullish, ${total} analysts)`;
-        })()
-      : "N/A";
-
-    // ── Gross margin derived from TTM figures ─────────────────────────────────
-    const grossProfitTTM = parseFloat(ov["GrossProfitTTM"] ?? "");
-    const revenueTTM     = parseFloat(ov["RevenueTTM"]     ?? "");
-    const grossMarginRaw = (!isNaN(grossProfitTTM) && !isNaN(revenueTTM) && revenueTTM !== 0)
-      ? String(grossProfitTTM / revenueTTM)
-      : ov["ProfitMargin"];
-
-    return {
-      ticker,
-      fiscalYear,
-      revenue:         fmt(reports[0]?.["totalRevenue"]),
-      revenueGrowth:   yoyGrowth,
-      netIncome:       fmt(reports[0]?.["netIncome"]),
-      ebitda:          fmt(reports[0]?.["ebitda"]),
-      marketCap:       fmt(ov["MarketCapitalization"]),
-      stockPrice:      ov["50DayMovingAverage"]
-                         ? `$${parseFloat(ov["50DayMovingAverage"]).toFixed(2)}`
-                         : "N/A",
-      peRatio:         fmtPE(ov["PERatio"]),
-      epsAnnual:       ov["EPS"] ? `$${parseFloat(ov["EPS"]).toFixed(2)}` : "N/A",
-      grossMargin:     fmtPct(grossMarginRaw),
-      operatingMargin: fmtPct(ov["OperatingMarginTTM"]),
-      analystTarget:   ov["AnalystTargetPrice"]
-                         ? `$${parseFloat(ov["AnalystTargetPrice"]).toFixed(2)}`
-                         : "N/A",
-      analystRating,
-      revenueHistory,
-    };
+    return await res.json() as T;
   } catch (err) {
-    console.warn(`AV financials fetch failed for ${ticker}:`, err);
+    console.warn(`FMP fetch error (${path}):`, err);
     return null;
   }
 }
 
-// ─── Public: resolve ticker + fetch financials ────────────────────────────────
+// ── Step 1: resolve company name → ticker ─────────────────────────────────────
 
-export async function lookupFinancials(companyName: string): Promise<AVFinancials | null> {
-  const ticker = await resolveTickerSymbol(companyName);
-  if (!ticker) return null;
-  return fetchAVFinancials(ticker);
+async function resolveFMPTicker(companyName: string): Promise<string | null> {
+  if (!FMP_KEY) { console.warn("FMP_API_KEY not set — skipping FMP lookup"); return null; }
+  try {
+    const res = await fetch(
+      `${FMP_BASE}/v3/search?query=${encodeURIComponent(companyName)}&limit=5&apikey=${FMP_KEY}`
+    );
+    if (!res.ok) return null;
+
+    const results = await res.json() as { symbol: string; name: string; exchangeShortName?: string }[];
+    if (!results?.length) return null;
+
+    // Prefer US exchange equity
+    const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const query     = normalise(companyName);
+    const US_EXCHANGES = new Set(["NASDAQ", "NYSE", "AMEX", "NYSE ARCA"]);
+
+    const match =
+      results.find(r => normalise(r.name) === query && US_EXCHANGES.has(r.exchangeShortName ?? "")) ??
+      results.find(r => normalise(r.name).includes(query)) ??
+      results[0];
+
+    console.log(`📈 FMP resolved "${companyName}" → ${match.symbol}`);
+    return match.symbol;
+  } catch (err) {
+    console.warn(`FMP ticker resolution failed for "${companyName}":`, err);
+    return null;
+  }
+}
+
+// ── Step 2a: fetch financials ─────────────────────────────────────────────────
+
+async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null> {
+  type IncomeReport = {
+    calendarYear?: string; date?: string;
+    revenue?: number; netIncome?: number; ebitda?: number;
+    grossProfitRatio?: number; operatingIncomeRatio?: number;
+  };
+  type ProfileData = {
+    mktCap?: number; price?: number; pe?: number; eps?: number;
+  };
+  type RatingData = {
+    ratingDetailsDCFRecommendation?: string;
+    ratingDetailsROERecommendation?: string;
+    rating?: string;
+  };
+  type PriceTargetData = { priceTarget?: number };
+
+  const [incomeRaw, profileRaw, ratingRaw, targetRaw] = await Promise.all([
+    fmpGet<IncomeReport[]>(`/v3/income-statement/${ticker}?limit=5`),
+    fmpGet<ProfileData[]>(`/v3/profile/${ticker}?`),
+    fmpGet<RatingData[]>(`/v3/rating/${ticker}?`),
+    fmpGet<PriceTargetData[]>(`/v4/price-target-consensus?symbol=${ticker}&`),
+  ]);
+
+  const reports = incomeRaw ?? [];
+  const profile = profileRaw?.[0] ?? {};
+  const rating  = ratingRaw?.[0]  ?? {};
+  const target  = targetRaw?.[0]  ?? {};
+
+  if (!reports.length && !profile.mktCap) {
+    console.warn(`FMP: no financial data for ${ticker}`);
+    return null;
+  }
+
+  // Revenue history — chronological order
+  const revenueHistory = reports.slice(0, 4).map((r, i) => {
+    const year    = r.calendarYear ?? r.date?.slice(0, 4) ?? "N/A";
+    const rev     = r.revenue ?? 0;
+    const prevRev = reports[i + 1]?.revenue ?? 0;
+    const growth  = prevRev
+      ? `${rev > prevRev ? "+" : ""}${(((rev - prevRev) / prevRev) * 100).toFixed(1)}%`
+      : "N/A";
+    return { year, revenue: fmt(rev), growth };
+  }).reverse();
+
+  // YoY growth
+  const latestRev = reports[0]?.revenue ?? 0;
+  const priorRev  = reports[1]?.revenue ?? 0;
+  const yoyGrowth = priorRev
+    ? `${latestRev > priorRev ? "+" : ""}${(((latestRev - priorRev) / priorRev) * 100).toFixed(1)}% YoY`
+    : "N/A";
+
+  const fiscalYear = `FY${reports[0]?.calendarYear ?? reports[0]?.date?.slice(0, 4) ?? new Date().getFullYear()}`;
+
+  // Analyst rating from FMP rating endpoint
+  const analystRating = rating.ratingDetailsDCFRecommendation
+    ?? rating.ratingDetailsROERecommendation
+    ?? rating.rating
+    ?? "N/A";
+
+  return {
+    ticker,
+    fiscalYear,
+    revenue:         fmt(reports[0]?.revenue),
+    revenueGrowth:   yoyGrowth,
+    netIncome:       fmt(reports[0]?.netIncome),
+    ebitda:          fmt(reports[0]?.ebitda),
+    grossMargin:     fmtPct(reports[0]?.grossProfitRatio),
+    operatingMargin: fmtPct(reports[0]?.operatingIncomeRatio),
+    marketCap:       fmt(profile.mktCap),
+    stockPrice:      profile.price != null ? `$${profile.price.toFixed(2)}` : "N/A",
+    peRatio:         profile.pe   != null ? `${profile.pe.toFixed(1)}x`   : "N/A",
+    epsAnnual:       profile.eps  != null ? `$${profile.eps.toFixed(2)}`  : "N/A",
+    analystTarget:   target.priceTarget != null ? `$${target.priceTarget.toFixed(2)}` : "N/A",
+    analystRating,
+    revenueHistory,
+  };
+}
+
+// ── Step 2b: fetch ESG scores ─────────────────────────────────────────────────
+
+async function fetchFMPESG(ticker: string): Promise<FMPESGData | null> {
+  type ESGRecord = {
+    symbol?: string; companyName?: string;
+    ESGScore?: number; environmentalScore?: number; socialScore?: number; governanceScore?: number;
+    ESGRisk?: string; date?: string;
+  };
+
+  const data = await fmpGet<ESGRecord[]>(`/v4/esg-environmental-social-governance-data?symbol=${ticker}&`);
+  const record = data?.[0];
+
+  if (!record) {
+    console.warn(`FMP ESG: no data for ${ticker}`);
+    return null;
+  }
+
+  const esgScore = record.ESGScore ?? 0;
+  const esgRating = esgScore >= 70 ? "A" : esgScore >= 50 ? "BBB" : esgScore >= 30 ? "BB" : "B";
+
+  console.log(`🌱 FMP ESG for ${ticker}: score=${esgScore}, risk=${record.ESGRisk ?? "N/A"}`);
+
+  return {
+    ticker,
+    companyName:      record.companyName ?? ticker,
+    esgScore,
+    environmentScore: record.environmentalScore ?? 0,
+    socialScore:      record.socialScore       ?? 0,
+    governanceScore:  record.governanceScore    ?? 0,
+    esgRating,
+    esgRisk:          record.ESGRisk ?? "N/A",
+    lastUpdated:      record.date    ?? new Date().toISOString().slice(0, 10),
+  };
+}
+
+// ── Public: full FMP lookup (financials + ESG) ────────────────────────────────
+
+export async function lookupFMP(companyName: string): Promise<{
+  financials: FMPFinancials | null;
+  esg:        FMPESGData    | null;
+}> {
+  const ticker = await resolveFMPTicker(companyName);
+  if (!ticker) return { financials: null, esg: null };
+
+  // Fetch financials and ESG in parallel — same ticker, independent endpoints
+  const [financials, esg] = await Promise.all([
+    fetchFMPFinancials(ticker),
+    fetchFMPESG(ticker),
+  ]);
+
+  return { financials, esg };
 }
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
@@ -302,36 +361,32 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
 
 // ─── Report Part A: overview + financials + strategy + market ─────────────────
 
-async function generatePartA(companyName: string): Promise<unknown> {
-  // CEO lookup (web search) and AV financials are both external calls —
-  // run in parallel since neither touches the Anthropic token bucket.
-  const [currentCEO, avData] = await Promise.all([
-    lookupCEO(companyName),
-    lookupFinancials(companyName),
-  ]);
+async function generatePartA(companyName: string, fmpFinancials?: FMPFinancials | null): Promise<unknown> {
+  const currentCEO = await lookupCEO(companyName);
 
-  // Build verified financial injection block
-  const finBlock = avData
-    ? `VERIFIED FINANCIAL DATA (Alpha Vantage — use verbatim, do not alter):
-- Ticker:               ${avData.ticker}
-- Fiscal Year:          ${avData.fiscalYear}
-- Revenue:              ${avData.revenue}
-- Revenue Growth (YoY): ${avData.revenueGrowth}
-- Net Income:           ${avData.netIncome}
-- EBITDA:               ${avData.ebitda}
-- Market Cap:           ${avData.marketCap}
-- Stock Price (50d MA): ${avData.stockPrice}
-- P/E Ratio:            ${avData.peRatio}
-- EPS (Annual):         ${avData.epsAnnual}
-- Gross Margin:         ${avData.grossMargin}
-- Operating Margin:     ${avData.operatingMargin}
-- Analyst Target Price: ${avData.analystTarget}
-- Analyst Rating:       ${avData.analystRating}
+  // Build verified financial injection block from FMP data
+  const fin = fmpFinancials;
+  const finBlock = fin
+    ? `VERIFIED FINANCIAL DATA (Financial Modeling Prep — use verbatim, do not alter):
+- Ticker:               ${fin.ticker}
+- Fiscal Year:          ${fin.fiscalYear}
+- Revenue:              ${fin.revenue}
+- Revenue Growth (YoY): ${fin.revenueGrowth}
+- Net Income:           ${fin.netIncome}
+- EBITDA:               ${fin.ebitda}
+- Market Cap:           ${fin.marketCap}
+- Stock Price:          ${fin.stockPrice}
+- P/E Ratio:            ${fin.peRatio}
+- EPS (Annual):         ${fin.epsAnnual}
+- Gross Margin:         ${fin.grossMargin}
+- Operating Margin:     ${fin.operatingMargin}
+- Analyst Target Price: ${fin.analystTarget}
+- Analyst Rating:       ${fin.analystRating}
 - Revenue History (chronological):
-${avData.revenueHistory.map(r => `  ${r.year}: ${r.revenue} (${r.growth})`).join("\n")}
+${fin.revenueHistory.map(r => `  ${r.year}: ${r.revenue} (${r.growth})`).join("\n")}
 
-Use ALL of the above values verbatim in the financials object. Do not substitute your own estimates for any field that has been provided above.`
-    : `No verified financial data available (private or unlisted company). Use best estimates from training data where confident; return null for any value you cannot verify.`;
+Use ALL of the above values verbatim in the financials object. Do not substitute your own estimates for any field that has been provided.\`
+    : \`No verified financial data available (private or unlisted company). Use best estimates from training data where confident; return null for any value you cannot verify.\`;
 
   const prompt = `Generate strategic intelligence PART A for: ${companyName}
 
@@ -411,8 +466,26 @@ Return ONLY this JSON:
 
 // ─── Report Part B: tech + ESG + SWOT + growth + risk + digital ──────────────
 
-async function generatePartB(companyName: string): Promise<unknown> {
+async function generatePartB(companyName: string, esgData?: FMPESGData | null): Promise<unknown> {
+  // Build verified ESG injection block from FMP data
+  const esgBlock = esgData
+    ? `VERIFIED ESG DATA (Financial Modeling Prep — use verbatim, do not alter):
+- ESG Rating:          ${esgData.esgRating}
+- ESG Score:           ${esgData.esgScore.toFixed(1)} / 100
+- ESG Risk Level:      ${esgData.esgRisk}
+- Environmental Score: ${esgData.environmentScore.toFixed(1)} / 100
+- Social Score:        ${esgData.socialScore.toFixed(1)} / 100
+- Governance Score:    ${esgData.governanceScore.toFixed(1)} / 100
+- Data as of:          ${esgData.lastUpdated}
+
+Use ALL values verbatim in the esg object. Set overallRating to "${esgData.esgRating} (FMP)". Do not substitute estimates for any provided field.`
+    : `No verified ESG data available. Use best estimates from training data; return null for any value you cannot verify.`;
+
   const prompt = `Generate strategic intelligence PART B for: ${companyName}
+
+${esgBlock}
+
+Return ONLY this JSON:
 
 Return ONLY this JSON:
 {
@@ -427,14 +500,21 @@ Return ONLY this JSON:
     "summary": "2-3 sentence tech summary"
   },
   "esg": {
-    "overallRating": "e.g. AA (MSCI) / Strong or null",
+    "overallRating": "e.g. A (FMP) or null",
+    "overallScore": "e.g. 72.4 / 100 or null",
+    "esgRisk": "e.g. Low / Medium / High or null",
+    "environmentScore": "e.g. 68.1 / 100 or null",
+    "socialScore": "e.g. 75.2 / 100 or null",
+    "governanceScore": "e.g. 71.0 / 100 or null",
     "netZeroTarget": "e.g. 2030 / 2050 / Not committed or null",
     "environmentalInitiatives": ["Initiative 1", "Initiative 2"],
     "socialInitiatives": ["Initiative 1", "Initiative 2"],
-    "governanceRating": "e.g. Strong / Average or null",
-    "boardDiversity": "e.g. 45% diverse board members or null",
     "esgRisks": ["Risk 1", "Risk 2"],
-    "summary": "2-3 sentence ESG summary"
+    "dataSource": "Financial Modeling Prep",
+    "summary": "2-3 sentence ESG summary incorporating rating, risk level, pillar scores, and key risks"
+  },
+    "dataSource": "ESG Enterprise",
+    "summary": "2-3 sentence ESG summary incorporating grade, pillar scores, and key risks"
   },
   "swot": {
     "strengths": [
@@ -498,7 +578,7 @@ Return ONLY this JSON:
   }
 }`;
 
-  return callClaude(prompt, 5000);
+  return callClaude(prompt, 5500);
 }
 
 // ─── Public: generate full report ─────────────────────────────────────────────
@@ -506,12 +586,22 @@ Return ONLY this JSON:
 export async function generateReport(companyName: string): Promise<unknown> {
   const start = Date.now();
 
-  // Part A pre-fetches CEO (web search) + AV financials in parallel before
-  // calling Haiku. Part B runs sequentially after to respect token rate limits.
-  const partA = await generatePartA(companyName);
-  const partB = await generatePartB(companyName);
+  // Part A: CEO lookup + AV financials (external, parallel, no token cost)
+  // MSCI ESG: runs in parallel with Part A — also external, no token cost
+  // Part B: sequential after Part A to respect Anthropic token rate limits
+  // FMP lookup (financials + ESG) and CEO lookup run in parallel —
+  // both are external HTTP calls with no Anthropic token cost.
+  const [fmpData, currentCEO] = await Promise.all([
+    lookupFMP(companyName),
+    lookupCEO(companyName),
+  ]);
 
-  console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (AV + CEO + Haiku x2)`);
+  // Part A and Part B run sequentially to respect Anthropic token rate limits.
+  // CEO is passed in to avoid a second web search call inside generatePartA.
+  const partA = await generatePartA(companyName, fmpData.financials);
+  const partB = await generatePartB(companyName, fmpData.esg);
+
+  console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (FMP + CEO + Haiku x2)`);
 
   return { ...(partA as object), ...(partB as object) };
 }
