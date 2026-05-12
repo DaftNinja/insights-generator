@@ -5,7 +5,7 @@ const client = new Anthropic({
 });
 
 // ─── Models ───────────────────────────────────────────────────────────────────
-// MODEL_GROUNDED: used only for the lean CEO lookup (web search, max_tokens: 200).
+// MODEL_GROUNDED: used only for the lean CEO lookup (web search, max_tokens: 200) .
 // MODEL_FAST: used for all main report generation — no web search, low token cost.
 const MODEL_GROUNDED = "claude-haiku-4-5-20251001";
 const MODEL_FAST     = "claude-haiku-4-5-20251001";
