@@ -12,6 +12,7 @@ const MODEL_FAST = "claude-haiku-4-5-20251001";     // Part B — no web search 
 
 const SYSTEM = `You are an elite strategic intelligence analyst.
 Respond with ONLY valid JSON — no prose, no markdown fences, no explanation.
+Do NOT write any introductory sentences or narrate your search process. Output JSON immediately.
 Use real accurate data for well-known companies. Estimates for smaller ones.
 CRITICAL: For CEO and key executives, only provide names you are highly confident are currently accurate.
 If uncertain about the current CEO, set "ceo" to "See company website for current CEO".
@@ -43,11 +44,18 @@ async function callClaudeGrounded(prompt: string, maxTokens: number): Promise<un
 
   if (!text) throw new Error("Empty response from Claude API");
 
-  // Sonnet with web search injects <cite index="...">...</cite> tags into its output.
-  // Strip them so the raw name/value lands in the JSON, not the markup.
+  // Strip citation tags injected by web search (e.g. <cite index="...">value</cite> → value)
   const stripped = text.replace(/<cite[^>]*>([\s\S]*?)<\/cite>/g, "$1");
 
-  const cleaned = stripped.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
+  // Model may emit preamble prose before the JSON fence — extract only the JSON block
+  const fenceMatch = stripped.match(/```json\s*([\s\S]*?)```/);
+  const jsonStr = fenceMatch
+    ? fenceMatch[1].trim()                          // content inside ```json ... ```
+    : stripped.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim(); // fallback
+
+  // Last-resort: if there's still preamble, find the first { and parse from there
+  const firstBrace = jsonStr.indexOf("{");
+  const cleaned = firstBrace > 0 ? jsonStr.slice(firstBrace) : jsonStr;
 
   try {
     return JSON.parse(cleaned);
@@ -156,7 +164,7 @@ Return ONLY this JSON:
   }
 }`;
 
-  return callClaudeGrounded(prompt, 5000); // ← grounded: Sonnet + web search
+  return callClaudeGrounded(prompt, 8000); // ← grounded: Haiku + web search; extra headroom for search result context
 }
 
 // ─── Report Part B: tech + ESG + SWOT + growth + risk + digital ──────────────
