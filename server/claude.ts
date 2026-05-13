@@ -432,6 +432,7 @@ Return ONLY this JSON:
 {
   "companyName": "Official company name",
   "industry": "Primary industry sector",
+  "website": "e.g. https://www.barclays.com or null",
   "executiveSummary": {
     "companyOverview": "2-3 sentence overview",
     "headquarters": "City, Country",
@@ -439,6 +440,7 @@ Return ONLY this JSON:
     "employees": "e.g. 250,000 or null",
     "ceo": "Full name",
     "keyExecutives": [{"name": "Name", "title": "Title"}, {"name": "Name", "title": "Title"}, {"name": "Name", "title": "Title"}],
+    "website": "e.g. https://www.hsbc.com or null",
     "stockExchange": "e.g. NYSE: AAPL or null if private",
     "highlights": ["Key highlight 1", "Key highlight 2", "Key highlight 3", "Key highlight 4"],
     "analystRating": "e.g. Buy / Overweight / Hold or null",
@@ -607,6 +609,71 @@ Return ONLY this JSON:
   return callClaude(prompt, 5500);
 }
 
+// ─── Confidence scoring ───────────────────────────────────────────────────────
+// Computed server-side from inspectable data quality signals — not LLM-generated.
+
+function computeConfidence(
+  partA: any,
+  partB: any,
+  fmpFinancials: import("./claude.js").FMPFinancials | null,
+  fmpESG: import("./claude.js").FMPESGData | null,
+  ceo: string,
+): { rating: "green" | "amber" | "red"; score: number; signals: { label: string; status: "pass" | "warn" | "fail" }[]; summary: string } {
+
+  const signals: { label: string; status: "pass" | "warn" | "fail" }[] = [];
+
+  // FMP financials
+  signals.push({ label: "Financial data (FMP)", status: fmpFinancials ? "pass" : "warn" });
+  signals.push({ label: "Revenue history", status: (fmpFinancials?.revenueHistory?.length ?? 0) >= 3 ? "pass" : "warn" });
+  signals.push({ label: "Market cap", status: fmpFinancials?.marketCap && fmpFinancials.marketCap !== "N/A" ? "pass" : "warn" });
+
+  // CEO
+  const ceoOk = ceo && ceo !== "See company website for current CEO";
+  signals.push({ label: "CEO verified", status: ceoOk ? "pass" : "warn" });
+
+  // ESG
+  signals.push({ label: "ESG data (FMP)", status: fmpESG ? "pass" : "warn" });
+
+  // Vision / Mission
+  const vision  = partA?.strategy?.vision;
+  const mission = partA?.strategy?.mission;
+  signals.push({ label: "Vision / Mission", status: (vision && vision !== "" && mission && mission !== "") ? "pass" : "warn" });
+
+  // Website
+  signals.push({ label: "Company website", status: partA?.website || partA?.executiveSummary?.website ? "pass" : "warn" });
+
+  // Key executives
+  const execCount = partA?.executiveSummary?.keyExecutives?.length ?? 0;
+  signals.push({ label: "Key executives", status: execCount >= 3 ? "pass" : execCount > 0 ? "warn" : "fail" });
+
+  // SWOT populated
+  const swotOk = (partB?.swot?.strengths?.length ?? 0) >= 2;
+  signals.push({ label: "SWOT analysis", status: swotOk ? "pass" : "warn" });
+
+  // Risk assessment
+  const risksOk = (partB?.riskAssessment?.risks?.length ?? 0) >= 2;
+  signals.push({ label: "Risk assessment", status: risksOk ? "pass" : "warn" });
+
+  // Score: pass=10pts, warn=5pts, fail=0pts
+  const maxScore = signals.length * 10;
+  const score    = Math.round(
+    (signals.reduce((acc, s) => acc + (s.status === "pass" ? 10 : s.status === "warn" ? 5 : 0), 0) / maxScore) * 100
+  );
+
+  const fails  = signals.filter(s => s.status === "fail").length;
+  const warns  = signals.filter(s => s.status === "warn").length;
+  const rating: "green" | "amber" | "red" =
+    fails > 0 || score < 40  ? "red"   :
+    warns > 2  || score < 70 ? "amber" : "green";
+
+  const summary =
+    rating === "green" ? "High confidence — verified data across all key sections." :
+    rating === "amber" ? `Moderate confidence — ${warns} section(s) could not be fully verified.` :
+    `Low confidence — significant data gaps detected. Treat with caution.`;
+
+  return { rating, score, signals, summary };
+}
+
 // ─── Public: generate full report ─────────────────────────────────────────────
 
 export async function generateReport(companyName: string): Promise<unknown> {
@@ -626,7 +693,8 @@ export async function generateReport(companyName: string): Promise<unknown> {
 
   console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (FMP + CEO + Haiku x2)`);
 
-  return { ...(partA as object), ...(partB as object) };
+  const confidence = computeConfidence(partA, partB, fmpData.financials, fmpData.esg, currentCEO);
+  return { ...(partA as object), ...(partB as object), confidence };
 }
 
 // ─── Sales Enablement ─────────────────────────────────────────────────────────
