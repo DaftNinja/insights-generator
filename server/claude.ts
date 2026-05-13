@@ -113,7 +113,14 @@ async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null>
   type IncomeReport = {
     calendarYear?: string; date?: string;
     revenue?: number; netIncome?: number; ebitda?: number;
+    operatingIncome?: number;
     grossProfitRatio?: number; operatingIncomeRatio?: number;
+  };
+  type CashFlowReport = {
+    depreciationAndAmortization?: number;
+  };
+  type ProfileData2 = {
+    sector?: string; industry?: string;
   };
   type ProfileData = {
     mktCap?: number; price?: number; pe?: number; eps?: number;
@@ -125,17 +132,23 @@ async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null>
   };
   type PriceTargetData = { priceTarget?: number };
 
-  const [incomeRaw, profileRaw, ratingRaw, targetRaw] = await Promise.all([
+  const [incomeRaw, cashFlowRaw, profileRaw, ratingRaw, targetRaw] = await Promise.all([
     fmpGet<IncomeReport[]>(`/v3/income-statement/${ticker}?limit=5`),
+    fmpGet<CashFlowReport[]>(`/v3/cash-flow-statement/${ticker}?limit=1`),
     fmpGet<ProfileData[]>(`/v3/profile/${ticker}?`),
     fmpGet<RatingData[]>(`/v3/rating/${ticker}?`),
     fmpGet<PriceTargetData[]>(`/v4/price-target-consensus?symbol=${ticker}&`),
   ]);
 
-  const reports = incomeRaw ?? [];
-  const profile = profileRaw?.[0] ?? {};
-  const rating  = ratingRaw?.[0]  ?? {};
-  const target  = targetRaw?.[0]  ?? {};
+  const reports  = incomeRaw    ?? [];
+  const cashFlow = cashFlowRaw?.[0] ?? {};
+  const profile  = profileRaw?.[0]  ?? {};
+  const rating   = ratingRaw?.[0]   ?? {};
+  const target   = targetRaw?.[0]   ?? {};
+
+  // Detect financial sector — EBITDA is not meaningful for banks/insurance
+  const sector = (profile as any).sector ?? "";
+  const isFinancial = /bank|financ|insurance|capital|invest/i.test(sector);
 
   if (!reports.length && !profile.mktCap) {
     console.warn(`FMP: no financial data for ${ticker}`);
@@ -174,7 +187,17 @@ async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null>
     revenue:         fmt(reports[0]?.revenue),
     revenueGrowth:   yoyGrowth,
     netIncome:       fmt(reports[0]?.netIncome),
-    ebitda:          fmt(reports[0]?.ebitda),
+    ebitda:          (() => {
+      // Banks and financial institutions don't use EBITDA — return "N/A (financial sector)"
+      if (isFinancial) return "N/A (financial sector)";
+      // Try direct FMP field first
+      const direct = reports[0]?.ebitda;
+      if (direct != null && direct !== 0) return fmt(direct);
+      // Fallback: operatingIncome + D&A from cash flow statement
+      const opIncome = reports[0]?.operatingIncome ?? 0;
+      const da       = (cashFlow as CashFlowReport).depreciationAndAmortization ?? 0;
+      return (opIncome || da) ? fmt(opIncome + da) : "N/A";
+    })(),
     grossMargin:     fmtPct(reports[0]?.grossProfitRatio),
     operatingMargin: fmtPct(reports[0]?.operatingIncomeRatio),
     marketCap:       fmt(profile.mktCap),
