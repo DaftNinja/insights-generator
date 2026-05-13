@@ -360,8 +360,8 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
 
 // ─── Report Part A: overview + financials + strategy + market ─────────────────
 
-async function generatePartA(companyName: string, fmpFinancials?: FMPFinancials | null): Promise<unknown> {
-  const currentCEO = await lookupCEO(companyName);
+async function generatePartA(companyName: string, fmpFinancials?: FMPFinancials | null, currentCEO?: string): Promise<unknown> {
+  const ceo = currentCEO ?? await lookupCEO(companyName);
 
   // Build verified financial injection block from FMP data
   const fin = fmpFinancials;
@@ -390,7 +390,7 @@ Use ALL of the above values verbatim in the financials object. Do not substitute
   const prompt = `Generate strategic intelligence PART A for: ${companyName}
 
 EXECUTIVE INSTRUCTIONS
-- Set executiveSummary.ceo to exactly: ${currentCEO}
+- Set executiveSummary.ceo to exactly: ${ceo}
 - Do NOT include the CEO in keyExecutives.
 - keyExecutives: 3–8 other verified senior leaders (CFO, COO, CTO, division presidents). Real names only. Omit anyone you cannot verify. Never invent or recombine names.
 
@@ -460,7 +460,7 @@ Return ONLY this JSON:
   }
 }`;
 
-  return callClaude(prompt, 5000);
+  return callClaude(prompt, 6000);
 }
 
 // ─── Report Part B: tech + ESG + SWOT + growth + risk + digital ──────────────
@@ -483,8 +483,6 @@ Use ALL values verbatim in the esg object. Set overallRating to "${esgData.esgRa
   const prompt = `Generate strategic intelligence PART B for: ${companyName}
 
 ${esgBlock}
-
-Return ONLY this JSON:
 
 Return ONLY this JSON:
 {
@@ -511,9 +509,6 @@ Return ONLY this JSON:
     "esgRisks": ["Risk 1", "Risk 2"],
     "dataSource": "Financial Modeling Prep",
     "summary": "2-3 sentence ESG summary incorporating rating, risk level, pillar scores, and key risks"
-  },
-    "dataSource": "ESG Enterprise",
-    "summary": "2-3 sentence ESG summary incorporating grade, pillar scores, and key risks"
   },
   "swot": {
     "strengths": [
@@ -585,9 +580,6 @@ Return ONLY this JSON:
 export async function generateReport(companyName: string): Promise<unknown> {
   const start = Date.now();
 
-  // Part A: CEO lookup + AV financials (external, parallel, no token cost)
-  // MSCI ESG: runs in parallel with Part A — also external, no token cost
-  // Part B: sequential after Part A to respect Anthropic token rate limits
   // FMP lookup (financials + ESG) and CEO lookup run in parallel —
   // both are external HTTP calls with no Anthropic token cost.
   const [fmpData, currentCEO] = await Promise.all([
@@ -597,7 +589,7 @@ export async function generateReport(companyName: string): Promise<unknown> {
 
   // Part A and Part B run sequentially to respect Anthropic token rate limits.
   // CEO is passed in to avoid a second web search call inside generatePartA.
-  const partA = await generatePartA(companyName, fmpData.financials);
+  const partA = await generatePartA(companyName, fmpData.financials, currentCEO);
   const partB = await generatePartB(companyName, fmpData.esg);
 
   console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (FMP + CEO + Haiku x2)`);
