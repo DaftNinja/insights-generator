@@ -128,8 +128,8 @@ export function Presentation() {
           </div>
 
           {presentation.disclaimer && (
-            <div className="rounded-lg border border-amber-900/30 bg-amber-950/10 px-4 py-3">
-              <p className="text-xs text-amber-400/70">{presentation.disclaimer}</p>
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] px-4 py-3">
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{presentation.disclaimer}</p>
             </div>
           )}
         </div>
