@@ -1,4 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import * as path from "path";
+import { existsSync as fsExistsSync } from "fs";
+
+const execFileAsync = promisify(execFile);
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -464,6 +470,46 @@ OUTPUT REQUIREMENTS
 - No additional keys outside the requested schema.
 - Analytical, dense, neutral, executive-grade tone.`;
 
+// ─── last30days enrichment ──────────────────────────────────────────────────────
+// Shells out to the vendored last30days Python engine (pinned install via
+// scripts/install-last30days.sh → tools/last30days). Pure-stdlib Python 3.12+.
+// Non-fatal: any failure → null, report generates without enrichment.
+
+async function runLast30Days(companyName: string): Promise<string | null> {
+  const skillDir = [
+    process.env.LAST30DAYS_SKILL_PATH,
+    path.resolve(process.cwd(), "tools", "last30days"),
+    path.join(process.env.HOME ?? "/root", ".agents", "skills", "last30days", "scripts"),
+  ].filter((p): p is string => Boolean(p)).find(fsExistsSync);
+
+  if (!skillDir) {
+    console.warn("📡 last30days: engine not installed — run scripts/install-last30days.sh");
+    return null;
+  }
+  const scriptPath = path.join(skillDir, "last30days.py");
+
+  try {
+    const { stdout } = await execFileAsync(
+      "python3",
+      [scriptPath, "--emit=context", "--quick", "--", companyName],
+      { timeout: 75_000, env: { ...process.env }, maxBuffer: 1024 * 1024 }
+    );
+    const result = stdout.trim();
+    const clusterSection = result.split("Top clusters:")[1] ?? "";
+    const noEvidence = !result || result.includes("No candidates survived") || !/^- /m.test(clusterSection);
+    if (noEvidence) {
+      console.warn(`📡 last30days: no usable evidence for "${companyName}" — skipping enrichment`);
+      return null;
+    }
+    console.log(`📡 last30days: enrichment fetched for "${companyName}" (${result.length} chars)`);
+    return result;
+  } catch (err: any) {
+    const reason = err.code === "ENOENT" ? "python3 not found" : err.killed ? "timed out after 75s" : err.message?.slice(0, 80);
+    console.warn(`📡 last30days: skipped for "${companyName}" — ${reason}`);
+    return null;
+  }
+}
+
 // ─── CEO lookup via web search (minimal token footprint) ──────────────────────
 
 async function lookupCEO(companyName: string): Promise<string> {
@@ -527,6 +573,7 @@ async function generatePartA(
   fmpFinancials?: FMPFinancials | null,
   currentCEO?: string,
   wikiData?: WikipediaData | null,
+  socialContext?: string | null,
 ): Promise<unknown> {
   const ceo = currentCEO ?? await lookupCEO(companyName);
 
@@ -577,7 +624,8 @@ Note: This company is private/unlisted. No stock price, market cap, P/E ratio, o
 Use the Wikipedia figures above for revenue, employees, and other available fields.
 For unavailable fields (stock price, market cap, EPS, analyst target), return null.`;
   } else {
-    finBlock = `No verified financial data available (private or unlisted company). Use best estimates from training data where confident; return null for any value you cannot verify.`;
+    finBlock = `No verified financial data from Financial Modeling Prep (common for non-US-listed or private companies).
+Use your training knowledge to populate the financials. For large publicly listed companies (FTSE 100, DAX 40, CAC 40, Nikkei 225, etc.) you will have good data on revenue, net income, market cap, margins, and growth from annual reports and financial databases. Fill in every field you can substantiate with reasonable confidence. Use the company's reporting currency (e.g. £ for UK companies, € for Eurozone). Only return null for fields where you genuinely have no basis for an estimate.`;
   }
 
   // ── Context supplement from Wikipedia (for all companies) ────────────────
@@ -592,9 +640,16 @@ For unavailable fields (stock price, market cap, EPS, analyst target), return nu
 - Website: ${wikiData.website ?? "N/A"}`
       : "");
 
+  const socialBlock = socialContext
+    ? `CURRENT INTELLIGENCE — LAST 30 DAYS (Reddit, X, YouTube, Hacker News, GitHub, Polymarket):
+${socialContext}
+
+Use this real-time signal to strengthen: executiveSummary.highlights, marketAnalysis.marketTrends, strategy.coreInitiatives. Prioritise recent facts over training-data assumptions where they conflict. Do not fabricate sources or citations.`
+    : "";
+
   const prompt = `Generate strategic intelligence PART A for: ${companyName}
 
-EXECUTIVE INSTRUCTIONS
+${socialBlock ? socialBlock + "\n\n" : ""}EXECUTIVE INSTRUCTIONS
 - Set executiveSummary.ceo to exactly: ${ceo}
 - Do NOT include the CEO in keyExecutives.
 - keyExecutives: 3–8 other verified senior leaders (CFO, COO, CTO, division presidents). Real names only. Omit anyone you cannot verify. Never invent or recombine names.
@@ -682,7 +737,7 @@ Return ONLY this JSON:
 
 // ─── Report Part B: tech + ESG + SWOT + growth + risk + digital ──────────────
 
-async function generatePartB(companyName: string, esgData?: FMPESGData | null): Promise<unknown> {
+async function generatePartB(companyName: string, esgData?: FMPESGData | null, socialContext?: string | null): Promise<unknown> {
   // Build verified ESG injection block from FMP data
   const esgBlock = esgData
     ? `VERIFIED ESG DATA (Financial Modeling Prep — use verbatim, do not alter):
@@ -695,11 +750,24 @@ async function generatePartB(companyName: string, esgData?: FMPESGData | null): 
 - Data as of:          ${esgData.lastUpdated}
 
 Use ALL values verbatim in the esg object. Set overallRating to "${esgData.esgRating} (FMP)". Do not substitute estimates for any provided field.`
-    : `No verified ESG data available. Use best estimates from training data; return null for any value you cannot verify.`;
+    : `No verified ESG data from Financial Modeling Prep (common for non-US-listed companies).
+Use your training knowledge to populate the ESG fields. For large, publicly reported companies (FTSE 100, Euro Stoxx 50, etc.) you will have good data on:
+- Published ESG ratings from MSCI, Sustainalytics, or CDP (use these for overallRating, e.g. "A (MSCI)")
+- Net Zero targets, environmental commitments, and governance practices from annual/sustainability reports
+- Board diversity figures from corporate governance disclosures
+- ESG risk assessments from major rating agencies
+Fill in every field you can substantiate. Only return null for fields where you genuinely have no basis for an estimate — not as a precautionary default.`;
+
+  const socialBlock = socialContext
+    ? `CURRENT INTELLIGENCE — LAST 30 DAYS (Reddit, X, YouTube, Hacker News, GitHub, Polymarket):
+${socialContext}
+
+Use this real-time signal to strengthen: swot (opportunities and threats especially), riskAssessment.risks, growthOpportunities.opportunities, digitalTransformation. Prioritise recent facts over training-data assumptions where they conflict. Do not fabricate sources or citations.`
+    : "";
 
   const prompt = `Generate strategic intelligence PART B for: ${companyName}
 
-${esgBlock}
+${socialBlock ? socialBlock + "\n\n" : ""}${esgBlock}
 
 Return ONLY this JSON:
 {
@@ -720,6 +788,8 @@ Return ONLY this JSON:
     "environmentScore": "e.g. 68.1 / 100 or null",
     "socialScore": "e.g. 75.2 / 100 or null",
     "governanceScore": "e.g. 71.0 / 100 or null",
+    "governanceRating": "e.g. Strong / Moderate / Weak or null",
+    "boardDiversity": "e.g. 40% female representation or null",
     "netZeroTarget": "e.g. 2030 / 2050 / Not committed or null",
     "environmentalInitiatives": ["Initiative 1", "Initiative 2"],
     "socialInitiatives": ["Initiative 1", "Initiative 2"],
@@ -876,10 +946,11 @@ export async function generateReport(companyName: string): Promise<unknown> {
   // FMP lookup (financials + ESG), CEO lookup, and Wikipedia lookup all run in parallel.
   // Wikipedia runs unconditionally — we'll only use it if FMP comes back empty,
   // but starting it in parallel costs nothing extra in wall-clock time.
-  const [fmpData, currentCEO, wikiData] = await Promise.all([
+  const [fmpData, currentCEO, wikiData, socialContext] = await Promise.all([
     lookupFMP(companyName),
     lookupCEO(companyName),
     lookupWikipedia(companyName),
+    runLast30Days(companyName),
   ]);
 
   // Decide data source for logging
@@ -893,8 +964,8 @@ export async function generateReport(companyName: string): Promise<unknown> {
 
   // Part A and Part B run sequentially to respect Anthropic token rate limits.
   // Pass wikiData into Part A so it can supplement the financial block.
-  const partA = await generatePartA(companyName, fmpData.financials, currentCEO, wikiData);
-  const partB = await generatePartB(companyName, fmpData.esg);
+  const partA = await generatePartA(companyName, fmpData.financials, currentCEO, wikiData, socialContext);
+  const partB = await generatePartB(companyName, fmpData.esg, socialContext);
 
   console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (FMP + Wiki + CEO + Haiku x2)`);
 
