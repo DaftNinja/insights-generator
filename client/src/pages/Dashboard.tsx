@@ -316,6 +316,7 @@ type FinMetaType = {
 
 function FinancialsTab({ data, finMeta }: { data: ReportData; finMeta: FinMetaType }) {
   const fin = data.financials;
+  if (!fin) return <div className="card"><p className="text-[var(--text-muted)]">Financial data not available.</p></div>;
   const isPrivate = isPrivateCompany(fin);
 
   function SourceBadge() {
@@ -747,7 +748,7 @@ function DigitalTab({ data }: { data: ReportData }) {
       <div className="card">
         <div className="section-title">Key Initiatives</div>
         <div className="space-y-3">
-          {dx.keyInitiatives.map((init, i) => (
+          {(dx.keyInitiatives ?? []).map((init, i) => (
             <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-[var(--bg-secondary)]">
               <span className={`badge ${statusColor[init.status] ?? "badge-blue"} shrink-0 mt-0.5`}>
                 {init.status.replace("_", " ")}
@@ -773,7 +774,7 @@ function DigitalTab({ data }: { data: ReportData }) {
       <div className="card">
         <div className="section-title">Transformation Challenges</div>
         <ul className="space-y-2">
-          {dx.challenges.map((c, i) => (
+          {(dx.challenges ?? []).map((c, i) => (
             <li key={i} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
               <span className="text-amber-400 shrink-0">⚠</span>{c}
             </li>
