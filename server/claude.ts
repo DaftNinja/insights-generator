@@ -50,6 +50,7 @@ export interface FMPFinancials {
   epsAnnual:       string;
   analystTarget:   string;
   analystRating:   string;
+  employees:       string | null;   // fullTimeEmployees from FMP profile
   revenueHistory:  { year: string; revenue: string; growth: string }[];
 }
 
@@ -138,13 +139,9 @@ async function resolveFMPTicker(companyName: string): Promise<string | null> {
       "JSE", "BOVESPA", "BMV",
     ]);
 
-    // Only accept matches where the name meaningfully matches AND it's on a recognised exchange.
-    // Deliberately avoid results[0] blind fallback — it caused wrong-company matches
-    // (e.g. "Fidelity National Financial" for "Fidelity Investments").
     const match =
       results.find(r => normalise(r.name) === query && KNOWN_EXCHANGES.has(r.exchangeShortName ?? "")) ??
       results.find(r => normalise(r.name).includes(query) && KNOWN_EXCHANGES.has(r.exchangeShortName ?? "")) ??
-      // Looser fallback: name match on any exchange (catches gaps in KNOWN_EXCHANGES list)
       results.find(r => normalise(r.name) === query) ??
       results.find(r => normalise(r.name).includes(query));
 
@@ -173,11 +170,9 @@ async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null>
   type CashFlowReport = {
     depreciationAndAmortization?: number;
   };
-  type ProfileData2 = {
-    sector?: string; industry?: string;
-  };
   type ProfileData = {
     mktCap?: number; price?: number; pe?: number; eps?: number;
+    fullTimeEmployees?: number; sector?: string;
   };
   type RatingData = {
     ratingDetailsDCFRecommendation?: string;
@@ -200,7 +195,6 @@ async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null>
   const rating   = ratingRaw?.[0]   ?? {};
   const target   = targetRaw?.[0]   ?? {};
 
-  // Detect financial sector — EBITDA is not meaningful for banks/insurance
   const sector = (profile as any).sector ?? "";
   const isFinancial = /bank|financ|insurance|capital|invest/i.test(sector);
 
@@ -209,7 +203,6 @@ async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null>
     return null;
   }
 
-  // Revenue history — chronological order
   const revenueHistory = reports.slice(0, 4).map((r, i) => {
     const year    = r.calendarYear ?? r.date?.slice(0, 4) ?? "N/A";
     const rev     = r.revenue ?? 0;
@@ -220,7 +213,6 @@ async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null>
     return { year, revenue: fmt(rev), growth };
   }).reverse();
 
-  // YoY growth
   const latestRev = reports[0]?.revenue ?? 0;
   const priorRev  = reports[1]?.revenue ?? 0;
   const yoyGrowth = priorRev
@@ -229,7 +221,6 @@ async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null>
 
   const fiscalYear = `FY${reports[0]?.calendarYear ?? reports[0]?.date?.slice(0, 4) ?? new Date().getFullYear()}`;
 
-  // Analyst rating from FMP rating endpoint
   const analystRating = rating.ratingDetailsDCFRecommendation
     ?? rating.ratingDetailsROERecommendation
     ?? rating.rating
@@ -242,12 +233,9 @@ async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null>
     revenueGrowth:   yoyGrowth,
     netIncome:       fmt(reports[0]?.netIncome),
     ebitda:          (() => {
-      // Banks and financial institutions don't use EBITDA — return "N/A (financial sector)"
       if (isFinancial) return "N/A (financial sector)";
-      // Try direct FMP field first
       const direct = reports[0]?.ebitda;
       if (direct != null && direct !== 0) return fmt(direct);
-      // Fallback: operatingIncome + D&A from cash flow statement
       const opIncome = reports[0]?.operatingIncome ?? 0;
       const da       = (cashFlow as CashFlowReport).depreciationAndAmortization ?? 0;
       return (opIncome || da) ? fmt(opIncome + da) : "N/A";
@@ -258,8 +246,11 @@ async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null>
     stockPrice:      profile.price != null ? `$${profile.price.toFixed(2)}` : "N/A",
     peRatio:         profile.pe   != null ? `${profile.pe.toFixed(1)}x`   : "N/A",
     epsAnnual:       profile.eps  != null ? `$${profile.eps.toFixed(2)}`  : "N/A",
-    analystTarget:   target.priceTarget != null ? `$${target.priceTarget.toFixed(2)}` : "N/A",
+    analystTarget:   target.priceTarget != null ? `${target.priceTarget.toFixed(2)}` : "N/A",
     analystRating,
+    employees:       profile.fullTimeEmployees != null
+                       ? profile.fullTimeEmployees.toLocaleString("en-GB")
+                       : null,
     revenueHistory,
   };
 }
@@ -308,7 +299,6 @@ export async function lookupFMP(companyName: string): Promise<{
   const ticker = await resolveFMPTicker(companyName);
   if (!ticker) return { financials: null, esg: null };
 
-  // Fetch financials and ESG in parallel — same ticker, independent endpoints
   const [financials, esg] = await Promise.all([
     fetchFMPFinancials(ticker),
     fetchFMPESG(ticker),
@@ -318,18 +308,9 @@ export async function lookupFMP(companyName: string): Promise<{
 }
 
 // ─── Wikipedia Fallback ───────────────────────────────────────────────────────
-// Used when FMP returns no data (private companies, non-US listed, etc.)
-// Calls the Wikipedia REST API — no API key required.
 
-/**
- * Parse a value out of a Wikipedia infobox plain-text block.
- * The infobox is embedded in the extract as key: value lines, e.g.:
- *   "revenue = US$27.6 billion (2023)"
- * Returns the raw matched string or null.
- */
 function parseInfoboxField(text: string, ...keys: string[]): string | null {
   for (const key of keys) {
-    // Match "key = value" or "key: value" patterns (case-insensitive)
     const re = new RegExp(`(?:^|\\n)\\s*${key}\\s*[=:]\\s*([^\\n]+)`, "i");
     const m  = text.match(re);
     if (m?.[1]) return m[1].trim();
@@ -337,22 +318,17 @@ function parseInfoboxField(text: string, ...keys: string[]): string | null {
   return null;
 }
 
-/**
- * Strip Wikipedia citation noise and template markup from a value string.
- * e.g. "US$27.6 billion (2023)[4]" → "US$27.6 billion (2023)"
- */
 function cleanWikiValue(val: string | null): string | null {
   if (!val) return null;
   return val
-    .replace(/\[\d+\]/g, "")          // remove [4] citation refs
-    .replace(/\{\{[^}]*\}\}/g, "")    // remove {{template}} markup
+    .replace(/\[\d+\]/g, "")
+    .replace(/\{\{[^}]*\}\}/g, "")
     .replace(/\s+/g, " ")
     .trim() || null;
 }
 
 export async function lookupWikipedia(companyName: string): Promise<WikipediaData | null> {
   try {
-    // 1. Search Wikipedia for the company
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(companyName)}&srlimit=3&format=json&origin=*`;
     const searchRes = await fetch(searchUrl, { headers: { "User-Agent": "1GLInsightsBot/1.0" } });
     if (!searchRes.ok) return null;
@@ -363,7 +339,6 @@ export async function lookupWikipedia(companyName: string): Promise<WikipediaDat
     const hits = searchJson.query?.search ?? [];
     if (!hits.length) return null;
 
-    // Pick the best match: exact name match first, then first result
     const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
     const query = normalise(companyName);
     const bestHit =
@@ -373,7 +348,6 @@ export async function lookupWikipedia(companyName: string): Promise<WikipediaDat
 
     console.log(`📖 Wikipedia: searching "${companyName}" → matched "${bestHit.title}"`);
 
-    // 2. Fetch the full page summary + infobox via the REST summary endpoint
     const pageTitle  = encodeURIComponent(bestHit.title.replace(/ /g, "_"));
     const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${pageTitle}`;
     const summaryRes = await fetch(summaryUrl, { headers: { "User-Agent": "1GLInsightsBot/1.0" } });
@@ -387,7 +361,6 @@ export async function lookupWikipedia(companyName: string): Promise<WikipediaDat
 
     const extract = summaryJson.extract ?? "";
 
-    // 3. Also fetch the infobox data via the parse API (returns wikitext with structured fields)
     const parseUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content&rvslots=main&titles=${pageTitle}&format=json&origin=*`;
     const parseRes = await fetch(parseUrl, { headers: { "User-Agent": "1GLInsightsBot/1.0" } });
     let wikitext = "";
@@ -398,24 +371,23 @@ export async function lookupWikipedia(companyName: string): Promise<WikipediaDat
       wikitext    = page?.revisions?.[0]?.slots?.main?.["*"] ?? "";
     }
 
-    // 4. Parse infobox fields from wikitext (more reliable than extract for structured data)
     const textToParse = wikitext || extract;
 
-    const founded     = cleanWikiValue(parseInfoboxField(textToParse, "founded", "foundation", "established", "formation"));
+    const founded      = cleanWikiValue(parseInfoboxField(textToParse, "founded", "foundation", "established", "formation"));
     const headquarters = cleanWikiValue(parseInfoboxField(textToParse, "headquarters", "hq_location", "location_city", "location"));
-    const employees   = cleanWikiValue(parseInfoboxField(textToParse, "num_employees", "employees", "workforce"));
-    const revenue     = cleanWikiValue(parseInfoboxField(textToParse, "revenue", "total_revenue", "income"));
-    const netIncome   = cleanWikiValue(parseInfoboxField(textToParse, "net_income", "profit", "net_profit"));
-    const aum         = cleanWikiValue(parseInfoboxField(textToParse, "aum", "assets_under_management", "assets under management", "AUM"));
-    const totalAssets = cleanWikiValue(parseInfoboxField(textToParse, "total_assets", "assets"));
-    const website     = cleanWikiValue(parseInfoboxField(textToParse, "website", "url", "homepage"));
-    const parentOrg   = cleanWikiValue(parseInfoboxField(textToParse, "parent", "parent_organization", "owner"));
+    const employees    = cleanWikiValue(parseInfoboxField(textToParse, "num_employees", "employees", "workforce"));
+    const revenue      = cleanWikiValue(parseInfoboxField(textToParse, "revenue", "total_revenue", "income"));
+    const netIncome    = cleanWikiValue(parseInfoboxField(textToParse, "net_income", "profit", "net_profit"));
+    const aum          = cleanWikiValue(parseInfoboxField(textToParse, "aum", "assets_under_management", "assets under management", "AUM"));
+    const totalAssets  = cleanWikiValue(parseInfoboxField(textToParse, "total_assets", "assets"));
+    const website      = cleanWikiValue(parseInfoboxField(textToParse, "website", "url", "homepage"));
+    const parentOrg    = cleanWikiValue(parseInfoboxField(textToParse, "parent", "parent_organization", "owner"));
 
     console.log(`📖 Wikipedia data for "${companyName}": revenue=${revenue}, employees=${employees}, aum=${aum}`);
 
     return {
       title:        bestHit.title,
-      extract:      extract.slice(0, 1500), // cap to avoid token bloat
+      extract:      extract.slice(0, 1500),
       founded,
       headquarters,
       employees,
@@ -495,10 +467,7 @@ OUTPUT REQUIREMENTS
 - No additional keys outside the requested schema.
 - Analytical, dense, neutral, executive-grade tone.`;
 
-// ─── last30days enrichment ──────────────────────────────────────────────────────
-// Shells out to the vendored last30days Python engine (pinned install via
-// scripts/install-last30days.sh → tools/last30days). Pure-stdlib Python 3.12+.
-// Non-fatal: any failure → null, report generates without enrichment.
+// ─── last30days enrichment ────────────────────────────────────────────────────
 
 async function runLast30Days(companyName: string): Promise<string | null> {
   const skillDir = [
@@ -535,7 +504,7 @@ async function runLast30Days(companyName: string): Promise<string | null> {
   }
 }
 
-// ─── CEO lookup via web search (minimal token footprint) ──────────────────────
+// ─── CEO lookup via web search ────────────────────────────────────────────────
 
 async function lookupCEO(companyName: string): Promise<string> {
   try {
@@ -586,28 +555,11 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
   try {
     return JSON.parse(cleaned);
   } catch (firstErr) {
-    // Attempt structural repair for truncated responses — close any open
-    // arrays/objects so JSON.parse can recover a partial but usable result.
     try {
       let repaired = cleaned;
-      // Count unclosed braces/brackets
-      let opens = 0;
       let inString = false;
       let escape = false;
-      for (const ch of repaired) {
-        if (escape) { escape = false; continue; }
-        if (ch === '\\' && inString) { escape = true; continue; }
-        if (ch === '"') { inString = !inString; continue; }
-        if (!inString) {
-          if (ch === '{' || ch === '[') opens++;
-          if (ch === '}' || ch === ']') opens--;
-        }
-      }
-      // Trim trailing partial token (incomplete string or comma)
-      repaired = repaired.replace(/,\s*$/, "").replace(/"[^"]*$/, '"..."}');
-      // Re-close opens
       const stack: string[] = [];
-      inString = false; escape = false;
       for (const ch of repaired) {
         if (escape) { escape = false; continue; }
         if (ch === '\\' && inString) { escape = true; continue; }
@@ -618,6 +570,7 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
           else if ((ch === '}' || ch === ']') && stack.length) stack.pop();
         }
       }
+      repaired = repaired.replace(/,\s*$/, "").replace(/"[^"]*$/, '"..."}');
       repaired += stack.reverse().join("");
       const result = JSON.parse(repaired);
       console.warn(`⚠️  JSON repair succeeded — response was likely truncated at ${maxTokens} tokens`);
@@ -640,8 +593,6 @@ async function generatePartA(
 ): Promise<unknown> {
   const ceo = currentCEO ?? await lookupCEO(companyName);
 
-  // ── Financial data block ──────────────────────────────────────────────────
-  // Priority: FMP (real-time, structured) > Wikipedia (encyclopaedic, text-parsed) > LLM estimates
   const fin = fmpFinancials;
 
   let finBlock: string;
@@ -661,21 +612,22 @@ async function generatePartA(
 - Operating Margin:     ${fin.operatingMargin}
 - Analyst Target Price: ${fin.analystTarget}
 - Analyst Rating:       ${fin.analystRating}
+- Employees:            ${fin.employees ?? "N/A"}
 - Revenue History (chronological):
 ${fin.revenueHistory.map(r => `  ${r.year}: ${r.revenue} (${r.growth})`).join("\n")}
 
-Use ALL of the above values verbatim in the financials object. Do not substitute your own estimates for any field that has been provided.`;
+Use ALL of the above values verbatim in the financials object. Do not substitute your own estimates for any field that has been provided.
+Set executiveSummary.employees to exactly: ${fin.employees ?? "null"} - do not use any other figure.`;
   } else if (wikiData) {
-    // Build a structured injection from whatever Wikipedia returned
     const wikiLines: string[] = [];
-    if (wikiData.revenue)     wikiLines.push(`- Revenue:              ${wikiData.revenue}`);
-    if (wikiData.netIncome)   wikiLines.push(`- Net Income:           ${wikiData.netIncome}`);
-    if (wikiData.aum)         wikiLines.push(`- AUM:                  ${wikiData.aum}`);
-    if (wikiData.totalAssets) wikiLines.push(`- Total Assets:         ${wikiData.totalAssets}`);
-    if (wikiData.employees)   wikiLines.push(`- Employees:            ${wikiData.employees}`);
-    if (wikiData.founded)     wikiLines.push(`- Founded:              ${wikiData.founded}`);
-    if (wikiData.headquarters)wikiLines.push(`- Headquarters:         ${wikiData.headquarters}`);
-    if (wikiData.website)     wikiLines.push(`- Website:              ${wikiData.website}`);
+    if (wikiData.revenue)      wikiLines.push(`- Revenue:              ${wikiData.revenue}`);
+    if (wikiData.netIncome)    wikiLines.push(`- Net Income:           ${wikiData.netIncome}`);
+    if (wikiData.aum)          wikiLines.push(`- AUM:                  ${wikiData.aum}`);
+    if (wikiData.totalAssets)  wikiLines.push(`- Total Assets:         ${wikiData.totalAssets}`);
+    if (wikiData.employees)    wikiLines.push(`- Employees:            ${wikiData.employees}`);
+    if (wikiData.founded)      wikiLines.push(`- Founded:              ${wikiData.founded}`);
+    if (wikiData.headquarters) wikiLines.push(`- Headquarters:         ${wikiData.headquarters}`);
+    if (wikiData.website)      wikiLines.push(`- Website:              ${wikiData.website}`);
 
     finBlock = `SUPPLEMENTAL DATA (Wikipedia — private/unlisted company; use as directional reference):
 ${wikiLines.join("\n")}
@@ -684,7 +636,7 @@ COMPANY CONTEXT (Wikipedia extract — use to enrich overview, strategy, and mar
 ${wikiData.extract}
 
 Note: This company is private/unlisted. No stock price, market cap, P/E ratio, or analyst ratings are available.
-Use the Wikipedia figures above for revenue, employees, and other available fields.
+Use the Wikipedia figures above for revenue, employees, and other available fields. Set executiveSummary.employees verbatim from the Wikipedia figure above if present.
 For unavailable fields (stock price, market cap, EPS, analyst target), return null.`;
   } else {
     finBlock = `No verified financial data is available from any external source for ${companyName}.
@@ -697,14 +649,13 @@ IMPORTANT — DATA INTEGRITY RULES FOR FINANCIALS:
 - revenueHistory: return [] (empty array).
 - fiscalYear: return null.
 - outlook: you MAY provide a qualitative 1-2 sentence outlook based on publicly known context, but do not include any specific figures.
+- executiveSummary.employees: return null. Do not estimate headcount.
 
-Rationale: This report will be read by professionals. A blank field clearly signals a data gap. A confidently-stated but wrong revenue figure destroys credibility. Do not guess.`;
+Rationale: This report will be read by professionals. A blank field clearly signals a data gap. A confidently-stated but wrong number destroys credibility. Do not guess.`;
   }
 
-  // ── Context supplement from Wikipedia (for all companies) ────────────────
-  // Even for public companies, Wikipedia may add useful context (founded, HQ, etc.)
   const wikiContextBlock = (!fin && wikiData)
-    ? "" // already embedded in finBlock above
+    ? ""
     : (wikiData
       ? `\nSUPPLEMENTAL CONTEXT (Wikipedia):
 - Founded: ${wikiData.founded ?? "N/A"}
@@ -781,7 +732,7 @@ Return ONLY this JSON:
     "outlook": "2-sentence financial outlook or null"
   },
   "strategy": {
-    "vision": "Company's stated vision or purpose (e.g. from annual report, website, investor docs) — never empty string, use null only if genuinely undiscoverable",
+    "vision": "Company's stated vision or purpose — never empty string, use null only if genuinely undiscoverable",
     "mission": "Company's stated mission or strategic purpose — never empty string, use null only if genuinely undiscoverable",
     "coreInitiatives": [{"title": "Initiative name", "description": "Brief description", "timeline": "e.g. 2024-2026"}],
     "geographicFocus": ["Region 1", "Region 2", "Region 3"],
@@ -811,7 +762,6 @@ Return ONLY this JSON:
 // ─── Report Part B: tech + ESG + SWOT + growth + risk + digital ──────────────
 
 async function generatePartB(companyName: string, esgData?: FMPESGData | null, socialContext?: string | null): Promise<unknown> {
-  // Build verified ESG injection block from FMP data
   const esgBlock = esgData
     ? `VERIFIED ESG DATA (Financial Modeling Prep — use verbatim, do not alter):
 - ESG Rating:          ${esgData.esgRating}
@@ -936,7 +886,6 @@ Return ONLY this JSON:
 }
 
 // ─── Confidence scoring ───────────────────────────────────────────────────────
-// Computed server-side from inspectable data quality signals — not LLM-generated.
 
 function computeConfidence(
   partA: any,
@@ -949,52 +898,41 @@ function computeConfidence(
 
   const signals: { label: string; status: "pass" | "warn" | "fail" }[] = [];
 
-  // FMP financials — Wikipedia is a valid (amber) fallback
   if (fmpFinancials) {
     signals.push({ label: "Financial data (FMP)", status: "pass" });
+    signals.push({ label: "Employees (FMP)", status: fmpFinancials.employees ? "pass" : "warn" });
     signals.push({ label: "Revenue history", status: (fmpFinancials.revenueHistory?.length ?? 0) >= 3 ? "pass" : "warn" });
     signals.push({ label: "Market cap", status: fmpFinancials.marketCap && fmpFinancials.marketCap !== "N/A" ? "pass" : "warn" });
   } else if (wikiData?.revenue || wikiData?.aum) {
     signals.push({ label: "Financial data (Wikipedia)", status: "warn" });
+    signals.push({ label: "Employees (Wikipedia)", status: wikiData?.employees ? "warn" : "fail" });
     signals.push({ label: "Revenue history", status: "warn" });
-    signals.push({ label: "Market cap", status: "warn" }); // private — no market cap
+    signals.push({ label: "Market cap", status: "warn" });
   } else {
-    // LLM-estimated financials — warn rather than fail for known public companies
-    const hasRevenue = partA?.financials?.revenue && partA.financials.revenue !== null;
-    signals.push({ label: "Financial data (LLM estimate)", status: hasRevenue ? "warn" : "fail" });
-    const hasHistory = (partA?.financials?.revenueHistory?.length ?? 0) >= 2;
-    signals.push({ label: "Revenue history", status: hasHistory ? "warn" : "fail" });
+    signals.push({ label: "Financial data", status: "fail" });
+    signals.push({ label: "Employees", status: "fail" });
+    signals.push({ label: "Revenue history", status: "fail" });
     signals.push({ label: "Market cap", status: "warn" });
   }
 
-  // CEO
   const ceoOk = ceo && ceo !== "See company website for current CEO";
   signals.push({ label: "CEO verified", status: ceoOk ? "pass" : "warn" });
-
-  // ESG
   signals.push({ label: "ESG data (FMP)", status: fmpESG ? "pass" : "warn" });
 
-  // Vision / Mission
   const vision  = partA?.strategy?.vision;
   const mission = partA?.strategy?.mission;
   signals.push({ label: "Vision / Mission", status: (vision && vision !== "" && mission && mission !== "") ? "pass" : "warn" });
-
-  // Website
   signals.push({ label: "Company website", status: partA?.website || partA?.executiveSummary?.website ? "pass" : "warn" });
 
-  // Key executives
   const execCount = partA?.executiveSummary?.keyExecutives?.length ?? 0;
   signals.push({ label: "Key executives", status: execCount >= 3 ? "pass" : execCount > 0 ? "warn" : "fail" });
 
-  // SWOT populated
   const swotOk = (partB?.swot?.strengths?.length ?? 0) >= 2;
   signals.push({ label: "SWOT analysis", status: swotOk ? "pass" : "warn" });
 
-  // Risk assessment
   const risksOk = (partB?.riskAssessment?.risks?.length ?? 0) >= 2;
   signals.push({ label: "Risk assessment", status: risksOk ? "pass" : "warn" });
 
-  // Score: pass=10pts, warn=5pts, fail=0pts
   const maxScore = signals.length * 10;
   const score    = Math.round(
     (signals.reduce((acc, s) => acc + (s.status === "pass" ? 10 : s.status === "warn" ? 5 : 0), 0) / maxScore) * 100
@@ -1019,9 +957,6 @@ function computeConfidence(
 export async function generateReport(companyName: string): Promise<unknown> {
   const start = Date.now();
 
-  // FMP lookup (financials + ESG), CEO lookup, and Wikipedia lookup all run in parallel.
-  // Wikipedia runs unconditionally — we'll only use it if FMP comes back empty,
-  // but starting it in parallel costs nothing extra in wall-clock time.
   const [fmpData, currentCEO, wikiData, socialContext] = await Promise.all([
     lookupFMP(companyName),
     lookupCEO(companyName),
@@ -1029,17 +964,17 @@ export async function generateReport(companyName: string): Promise<unknown> {
     runLast30Days(companyName),
   ]);
 
-  // Decide data source for logging
   const dataSource = fmpData.financials
     ? "FMP"
     : wikiData?.revenue || wikiData?.aum
       ? "Wikipedia fallback"
-      : "LLM estimates only";
+      : "no external data";
 
   console.log(`📊 Data source for "${companyName}": ${dataSource}`);
+  if (fmpData.financials?.employees) {
+    console.log(`👥 Employees from FMP: ${fmpData.financials.employees}`);
+  }
 
-  // Part A and Part B run sequentially to respect Anthropic token rate limits.
-  // Pass wikiData into Part A so it can supplement the financial block.
   const partA = await generatePartA(companyName, fmpData.financials, currentCEO, wikiData, socialContext);
   const partB = await generatePartB(companyName, fmpData.esg, socialContext);
 
@@ -1047,9 +982,6 @@ export async function generateReport(companyName: string): Promise<unknown> {
 
   const confidence = computeConfidence(partA, partB, fmpData.financials, fmpData.esg, currentCEO, wikiData);
 
-  // ── Attach financials metadata ────────────────────────────────────────────
-  // Computed server-side from known data sources — never LLM-generated.
-  // This is injected into the report JSON so the UI can render source badges.
   const financialsMeta: FinancialsMetadata = (() => {
     const now = new Date().toISOString().slice(0, 10);
     if (fmpData.financials) {
@@ -1068,7 +1000,6 @@ export async function generateReport(companyName: string): Promise<unknown> {
         retrievedAt: now,
       };
     }
-    // Check whether the LLM actually populated figures despite the prohibition
     const partATyped = partA as any;
     const llmHasData = partATyped?.financials?.revenue || partATyped?.financials?.netIncome;
     return {
@@ -1079,22 +1010,17 @@ export async function generateReport(companyName: string): Promise<unknown> {
     };
   })();
 
-  // ── Numeric sanity checks ─────────────────────────────────────────────────
-  // Run after generation; flag anomalies in confidence signals rather than
-  // silently passing bad data through to the UI.
-  const partATyped = partA as any;
+  // Numeric sanity checks
   if (financialsMeta.source === "FMP" && fmpData.financials) {
-    const fin = fmpData.financials;
-    const revHistory = fin.revenueHistory;
+    const revHistory = fmpData.financials.revenueHistory;
     if (revHistory.length >= 2) {
-      // Check for implausible YoY swings (>300% growth or >90% decline)
       for (let i = 0; i < revHistory.length - 1; i++) {
         const curr = parseFloat(revHistory[i].revenue.replace(/[^0-9.]/g, ""));
         const prev = parseFloat(revHistory[i + 1].revenue.replace(/[^0-9.]/g, ""));
         if (prev > 0 && curr > 0) {
           const change = Math.abs((curr - prev) / prev);
           if (change > 3) {
-            console.warn(`⚠️  Sanity check: implausible revenue swing for ${companyName} (${revHistory[i+1].year}→${revHistory[i].year}: ${(change*100).toFixed(0)}%). Flagging.`);
+            console.warn(`⚠️  Sanity: implausible revenue swing for ${companyName} (${revHistory[i+1].year}→${revHistory[i].year}: ${(change*100).toFixed(0)}%)`);
             financialsMeta.confidence = "single-source";
           }
         }
@@ -1102,7 +1028,7 @@ export async function generateReport(companyName: string): Promise<unknown> {
     }
   }
 
-  // ── Strip orphaned IT budget % when revenue is unavailable ────────────────
+  // Strip orphaned IT budget % when revenue is unavailable
   if (financialsMeta.confidence === "unavailable" || financialsMeta.confidence === "estimated") {
     const techSpend = (partB as any)?.techSpend;
     if (techSpend?.itBudgetAsPercentRevenue) {
