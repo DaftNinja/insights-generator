@@ -106,7 +106,9 @@ async function fmpGet<T>(path: string): Promise<T | null> {
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      console.warn(`FMP ${path} → ${res.status}: ${body.slice(0, 150)}`);
+      // 402 = plan limitation (expected), 404 = no data for symbol (expected) — log as info not error
+      const level = (res.status === 402 || res.status === 404) ? 'info' : 'warn';
+      console[level](`FMP ${path} → ${res.status}: ${body.slice(0, 150)}`);
       return null;
     }
     return await res.json() as T;
@@ -133,7 +135,6 @@ async function resolveFMPTicker(companyName: string): Promise<string | null> {
     }
 
     const results = await res.json() as { symbol: string; name: string; exchangeShortName?: string; exchange?: string }[];
-    console.log(`📈 FMP results: ${JSON.stringify(results.slice(0,3))}`);
     if (!results?.length) return null;
 
     const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -150,16 +151,12 @@ async function resolveFMPTicker(companyName: string): Promise<string | null> {
     const nameMatch = (r: { symbol: string; name: string; exchange?: string }) =>
       normalise(r.name) === query || normalise(r.name).includes(query);
 
-    // Prefer US exchange listing (full FMP coverage) over international
     const match =
       results.find(r => nameMatch(r) && US_EXCHANGES.has(r.exchange ?? "")) ??
       results.find(r => nameMatch(r) && ALL_EXCHANGES.has(r.exchange ?? "")) ??
       results.find(r => nameMatch(r));
 
-    if (!match) {
-      console.log(`📈 FMP: no confident ticker match for "${companyName}" — will try Wikipedia fallback`);
-      return null;
-    }
+    if (!match) { return null; }
 
     console.log(`📈 FMP resolved "${companyName}" → ${match.symbol} (${match.exchange ?? 'unknown exchange'})`);
     return match.symbol;
@@ -318,289 +315,9 @@ export async function lookupFMP(companyName: string): Promise<{
   return { financials, esg };
 }
 
-// ─── Yahoo Finance fallback ───────────────────────────────────────────────────────────────────────
-// No API key required. Covers global exchanges including LSE (BARC.L), NYSE, NASDAQ etc.
-// Used when FMP returns no financial data (plan limitation or unlisted company).
-
-async function resolveYahooTicker(companyName: string): Promise<string | null> {
-  try {
-    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(companyName)}&quotesCount=5&newsCount=0`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json() as { quotes?: { symbol: string; shortname?: string; longname?: string; quoteType?: string; exchange?: string }[] };
-    const quotes = (data.quotes ?? []).filter(q => q.quoteType === "EQUITY");
-    if (!quotes.length) return null;
-
-    const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const query = normalise(companyName);
-
-    // Prefer primary listing (shorter symbol, no dot suffix where possible for major companies)
-    const match =
-      quotes.find(q => normalise(q.shortname ?? q.longname ?? "") === query) ??
-      quotes.find(q => normalise(q.shortname ?? q.longname ?? "").includes(query)) ??
-      quotes[0];
-
-    console.log(`💹 Yahoo resolved "${companyName}" → ${match.symbol} (${match.exchange ?? "unknown"})`);
-    return match.symbol;
-  } catch (err) {
-    console.warn(`Yahoo ticker resolution failed for "${companyName}":`, err);
-    return null;
-  }
-}
-
-async function fetchYahooFinancials(ticker: string): Promise<FMPFinancials | null> {
-  try {
-    // Step 1: Get a crumb (Yahoo requires this for authenticated data endpoints)
-    const crumbRes = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    // If crumb endpoint fails, try the v8 no-auth endpoint instead
-    let crumb = "";
-    if (crumbRes.ok) {
-      crumb = await crumbRes.text();
-    }
-
-    const cookieHeader = crumbRes.headers.get("set-cookie") ?? "";
-
-    // Step 2: Fetch quote summary with crumb
-    const modules = "incomeStatementHistory,defaultKeyStatistics,summaryDetail,financialData,price";
-    const url = crumb
-      ? `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules}&crumb=${encodeURIComponent(crumb)}`
-      : `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
-
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-        ...(cookieHeader ? { "Cookie": cookieHeader.split(";")[0] } : {}),
-      },
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!res.ok) {
-      console.warn(`Yahoo financials ${ticker} → ${res.status}`);
-      return null;
-    }
-    const data = await res.json() as any;
-
-    // Handle v8 chart fallback (only gives price/market cap, no income statements)
-    if (!crumb) {
-      const chart = data?.chart?.result?.[0];
-      if (!chart) return null;
-      const meta = chart.meta ?? {};
-      const currency = meta.currency ?? "USD";
-      const sym = currency === "GBp" ? "£" : currency === "GBP" ? "£" : currency === "EUR" ? "€" : "$";
-      const penceToGBP = currency === "GBp";
-      const price = meta.regularMarketPrice ?? null;
-      const priceV = penceToGBP && price ? price / 100 : price;
-      const mktCap = meta.marketCap ?? null;
-      const mktCapV = penceToGBP && mktCap ? mktCap / 100 : mktCap;
-      const mktCapStr = mktCapV == null ? "N/A" :
-        mktCapV >= 1e12 ? `${sym}${(mktCapV/1e12).toFixed(2)}T` :
-        mktCapV >= 1e9  ? `${sym}${(mktCapV/1e9).toFixed(1)}B` : `${sym}${(mktCapV/1e6).toFixed(0)}M`;
-      console.log(`💹 Yahoo chart fallback for ${ticker}: price=${priceV?.toFixed(2)}, mktCap=${mktCapStr}`);
-      return {
-        ticker, fiscalYear: `FY${new Date().getFullYear() - 1}`,
-        revenue: "N/A", revenueGrowth: "N/A", netIncome: "N/A", ebitda: "N/A",
-        grossMargin: "N/A", operatingMargin: "N/A",
-        marketCap: mktCapStr,
-        stockPrice: priceV != null ? `${sym}${priceV.toFixed(2)}` : "N/A",
-        peRatio: "N/A", epsAnnual: "N/A", analystTarget: "N/A", analystRating: "N/A",
-        employees: null, revenueHistory: [],
-      };
-    }
-
-    const result = data?.quoteSummary?.result?.[0];
-    if (!result) return null;
-
-    const price      = result.price ?? {};
-    const finData    = result.financialData ?? {};
-    const keyStats   = result.defaultKeyStatistics ?? {};
-    const sumDetail  = result.summaryDetail ?? {};
-    const incStmts   = result.incomeStatementHistory?.incomeStatementHistory ?? [];
-
-    const currency = price.currency ?? "USD";
-    const sym = currency === "GBp" ? "£" : currency === "GBP" ? "£" : currency === "EUR" ? "€" : "$";
-    const penceToGBP = currency === "GBp";
-
-    const fmtYahoo = (raw: any): string => {
-      const n = raw?.raw ?? null;
-      if (n == null || isNaN(n)) return "N/A";
-      const v = penceToGBP ? n / 100 : n;
-      if (Math.abs(v) >= 1e12) return `${sym}${(v / 1e12).toFixed(2)}T`;
-      if (Math.abs(v) >= 1e9)  return `${sym}${(v / 1e9).toFixed(1)}B`;
-      if (Math.abs(v) >= 1e6)  return `${sym}${(v / 1e6).toFixed(0)}M`;
-      return `${sym}${v.toLocaleString()}`;
-    };
-
-    const fmtPctYahoo = (raw: any): string => {
-      const n = raw?.raw ?? null;
-      if (n == null || isNaN(n)) return "N/A";
-      return `${(n * 100).toFixed(1)}%`;
-    };
-
-    const revenueHistory = incStmts.slice(0, 4).map((stmt: any, i: number) => {
-      const year = new Date(stmt.endDate?.raw * 1000).getFullYear().toString();
-      const rev = stmt.totalRevenue?.raw ?? 0;
-      const prevRev = incStmts[i + 1]?.totalRevenue?.raw ?? 0;
-      const v = penceToGBP ? rev / 100 : rev;
-      const pv = penceToGBP ? prevRev / 100 : prevRev;
-      const growth = pv ? `${v > pv ? "+" : ""}${(((v - pv) / pv) * 100).toFixed(1)}%` : "N/A";
-      const revStr = Math.abs(v) >= 1e9 ? `${sym}${(v / 1e9).toFixed(1)}B` : `${sym}${(v / 1e6).toFixed(0)}M`;
-      return { year, revenue: revStr, growth };
-    }).reverse();
-
-    const latestInc = incStmts[0];
-    const prevInc   = incStmts[1];
-    const latestRev = penceToGBP ? (latestInc?.totalRevenue?.raw ?? 0) / 100 : (latestInc?.totalRevenue?.raw ?? 0);
-    const prevRevVal = penceToGBP ? (prevInc?.totalRevenue?.raw ?? 0) / 100 : (prevInc?.totalRevenue?.raw ?? 0);
-    const yoyGrowth = prevRevVal ? `${latestRev > prevRevVal ? "+" : ""}${(((latestRev - prevRevVal) / prevRevVal) * 100).toFixed(1)}% YoY` : "N/A";
-
-    const marketCapRaw = price.marketCap?.raw ?? null;
-    const mktCapV = penceToGBP && marketCapRaw ? marketCapRaw / 100 : marketCapRaw;
-    const mktCapStr = mktCapV == null ? "N/A" :
-      mktCapV >= 1e12 ? `${sym}${(mktCapV / 1e12).toFixed(2)}T` :
-      mktCapV >= 1e9  ? `${sym}${(mktCapV / 1e9).toFixed(1)}B` : `${sym}${(mktCapV / 1e6).toFixed(0)}M`;
-
-    const stockPriceRaw = price.regularMarketPrice?.raw ?? null;
-    const stockPriceV = penceToGBP && stockPriceRaw ? stockPriceRaw / 100 : stockPriceRaw;
-    const stockPriceStr = stockPriceV != null ? `${sym}${stockPriceV.toFixed(2)}` : "N/A";
-
-    const employees = keyStats.fullTimeEmployees ?? null;
-    const fiscalYear = `FY${new Date((latestInc?.endDate?.raw ?? Date.now() / 1000) * 1000).getFullYear()}`;
-
-    console.log(`💹 Yahoo financials for ${ticker}: revenue=${fmtYahoo(latestInc?.totalRevenue)}, mktCap=${mktCapStr}`);
-
-    return {
-      ticker, fiscalYear,
-      revenue:         fmtYahoo(latestInc?.totalRevenue),
-      revenueGrowth:   yoyGrowth,
-      netIncome:       fmtYahoo(latestInc?.netIncome),
-      ebitda:          fmtYahoo(finData.ebitda),
-      grossMargin:     fmtPctYahoo(finData.grossMargins),
-      operatingMargin: fmtPctYahoo(finData.operatingMargins),
-      marketCap:       mktCapStr,
-      stockPrice:      stockPriceStr,
-      peRatio:         sumDetail.trailingPE?.raw != null ? `${sumDetail.trailingPE.raw.toFixed(1)}x` : "N/A",
-      epsAnnual:       keyStats.trailingEps?.raw != null ? `${sym}${keyStats.trailingEps.raw.toFixed(2)}` : "N/A",
-      analystTarget:   finData.targetMeanPrice?.raw != null ? `${sym}${finData.targetMeanPrice.raw.toFixed(2)}` : "N/A",
-      analystRating:   finData.recommendationKey ?? "N/A",
-      employees:       employees != null ? employees.toLocaleString("en-GB") : null,
-      revenueHistory,
-    };
-  } catch (err) {
-    console.warn(`Yahoo financials failed for ${ticker}:`, err);
-    return null;
-  }
-}
-
-export async function lookupYahoo(companyName: string): Promise<FMPFinancials | null> {
-  // Yahoo Finance and web search fallbacks are too unreliable/expensive for the token budget.
-  // Return null — the LLM fallback in generatePartA will use training knowledge with strict rules.
-  return null;
-}
-
-// ─── Financial data via Claude web search ──────────────────────────────────────────────────────────────────────
-// Used when FMP plan doesn't cover the symbol. Uses a targeted web search
-// to pull financial data from annual reports, financial news, and data sites.
-// Returns structured JSON matching FMPFinancials so the rest of the pipeline
-// treats it identically to verified FMP data.
-
-async function lookupFinancialsViaWebSearch(companyName: string): Promise<FMPFinancials | null> {
-  try {
-    console.log(`🔍 Web search financial lookup for "${companyName}"...`);
-    const message = await client.messages.create({
-      model: MODEL_GROUNDED,
-      max_tokens: 1500,
-      tools: [{ type: "web_search_20250305", name: "web_search" }],
-      system: `You are a financial data extraction assistant. Search for the company's latest financial data and return ONLY a valid JSON object. No markdown, no explanation, no code fences. The JSON must be parseable by JSON.parse().
-
-IMPORTANT ACCURACY RULES:
-- Only include figures you found in search results. Do not estimate or hallucinate.
-- Use the company's reporting currency (e.g. £ for UK companies, € for EU).
-- Revenue and net income should be from the most recent full fiscal year annual report.
-- Market cap should be the current figure.
-- Return null for any field you cannot find with confidence.`,
-      messages: [{
-        role: "user",
-        content: `Search for the latest financial data for ${companyName} and return this exact JSON structure with real figures from search results:
-{
-  "ticker": "primary stock ticker (e.g. BARC.L or null)",
-  "fiscalYear": "e.g. FY2024",
-  "revenue": "e.g. £25.4B or null",
-  "revenueGrowth": "e.g. +5.2% YoY or null",
-  "netIncome": "e.g. £5.3B or null",
-  "ebitda": "e.g. £8.1B or null",
-  "grossMargin": "e.g. 45.2% or null",
-  "operatingMargin": "e.g. 21.3% or null",
-  "marketCap": "e.g. £34.5B or null",
-  "stockPrice": "e.g. £2.74 or null",
-  "peRatio": "e.g. 8.2x or null",
-  "epsAnnual": "e.g. £0.33 or null",
-  "analystTarget": "e.g. £3.20 or null",
-  "analystRating": "e.g. buy or null",
-  "employees": "e.g. 85,000 or null",
-  "revenueHistory": [
-    {"year": "2021", "revenue": "e.g. £21.9B", "growth": "e.g. +3.1%"},
-    {"year": "2022", "revenue": "e.g. £22.4B", "growth": "e.g. +2.3%"},
-    {"year": "2023", "revenue": "e.g. £24.0B", "growth": "e.g. +7.1%"},
-    {"year": "2024", "revenue": "e.g. £25.4B", "growth": "e.g. +5.8%"}
-  ]
-}
-Only include revenueHistory entries where you found actual figures. Return null for fields you cannot verify.`
-      }],
-    });
-
-    const text = message.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map(b => b.text)
-      .join("")
-      .replace(/<cite[^>]*>[\s\S]*?<\/cite>/g, "")
-      .replace(/^```json\n?/, "").replace(/\n?```$/, "")
-      .trim();
-
-    if (!text || !text.startsWith("{")) {
-      console.warn(`🔍 Web search financial lookup: no JSON in response for "${companyName}"`);
-      return null;
-    }
-
-    const d = JSON.parse(text) as any;
-
-    console.log(`🔍 Web search financials for "${companyName}": revenue=${d.revenue}, mktCap=${d.marketCap}`);
-
-    return {
-      ticker:          d.ticker ?? companyName,
-      fiscalYear:      d.fiscalYear ?? `FY${new Date().getFullYear() - 1}`,
-      revenue:         d.revenue ?? "N/A",
-      revenueGrowth:   d.revenueGrowth ?? "N/A",
-      netIncome:       d.netIncome ?? "N/A",
-      ebitda:          d.ebitda ?? "N/A",
-      grossMargin:     d.grossMargin ?? "N/A",
-      operatingMargin: d.operatingMargin ?? "N/A",
-      marketCap:       d.marketCap ?? "N/A",
-      stockPrice:      d.stockPrice ?? "N/A",
-      peRatio:         d.peRatio ?? "N/A",
-      epsAnnual:       d.epsAnnual ?? "N/A",
-      analystTarget:   d.analystTarget ?? "N/A",
-      analystRating:   d.analystRating ?? "N/A",
-      employees:       d.employees ?? null,
-      revenueHistory:  Array.isArray(d.revenueHistory) ? d.revenueHistory : [],
-    };
-  } catch (err) {
-    console.warn(`Web search financial lookup failed for "${companyName}":`, err);
-    return null;
-  }
-}
+// ─── LLM training knowledge fallback ─────────────────────────────────────────
+// When FMP returns no financials (plan limitation), generatePartA handles the
+// LLM fallback directly via the finBlock prompt. No separate function needed.
 
 // ─── Wikipedia Fallback ───────────────────────────────────────────────────────
 
@@ -1295,22 +1012,19 @@ export async function generateReport(companyName: string): Promise<unknown> {
     runLast30Days(companyName),
   ]);
 
-  // If FMP returned no financials (plan limitation, unlisted, etc.), try Yahoo Finance
-  let financials = fmpData.financials;
-  if (!financials) {
-    console.log(`💹 FMP returned no financials for "${companyName}" — trying Yahoo Finance...`);
-    financials = await lookupYahoo(companyName);
-  }
+  // FMP is the primary source. If it returns no financials (plan limitation),
+  // generatePartA handles the LLM training knowledge fallback via the finBlock prompt.
+  const financials = fmpData.financials;
 
   const dataSource = financials
-    ? (fmpData.financials ? "FMP" : "Yahoo Finance")
+    ? "FMP"
     : wikiData?.revenue || wikiData?.aum
       ? "Wikipedia fallback"
-      : "no external data";
+      : "LLM training knowledge";
 
   console.log(`📊 Data source for "${companyName}": ${dataSource}`);
   if (financials?.employees) {
-    console.log(`👥 Employees from ${fmpData.financials ? 'FMP' : 'Yahoo'}: ${financials.employees}`);
+    console.log(`👥 Employees from FMP: ${financials.employees}`);
   }
 
   const partA = await generatePartA(companyName, financials, currentCEO, wikiData, socialContext);
@@ -1326,7 +1040,8 @@ export async function generateReport(companyName: string): Promise<unknown> {
       return { source: "FMP", confidence: "verified", fiscalYear: fmpData.financials.fiscalYear, retrievedAt: now };
     }
     if (financials) {
-      // Yahoo Finance fallback — mark as single-source with Yahoo label
+      // Should not reach here currently (FMP plan limitation means financials is always null for non-US)
+      // Kept for when FMP plan is upgraded
       return { source: "FMP" as const, confidence: "single-source" as const, fiscalYear: financials.fiscalYear, retrievedAt: now };
     }
     if (wikiData?.revenue || wikiData?.aum || wikiData?.netIncome) {
