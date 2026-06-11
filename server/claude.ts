@@ -1,4 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import * as path from "path";
+import { existsSync as fsExistsSync } from "fs";
+
+const execFileAsync = promisify(execFile);
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -325,6 +331,61 @@ OUTPUT REQUIREMENTS
 - No additional keys outside the requested schema.
 - Analytical, dense, neutral, executive-grade tone.`;
 
+// ─── last30days enrichment ──────────────────────────────────────────────────────
+// Shells out to the last30days Python engine (installed via npx skills add).
+// Returns a compact context block (~600 chars) suitable for injecting into prompts.
+// Non-fatal: if the skill isn't installed or times out, the report still generates.
+
+async function runLast30Days(companyName: string): Promise<string | null> {
+  // Priority: env override → vendored tools/last30days → global agent-skills install
+  const skillDir = [
+    process.env.LAST30DAYS_SKILL_PATH,
+    path.resolve(process.cwd(), "tools", "last30days"),
+    path.join(process.env.HOME ?? "/root", ".agents", "skills", "last30days", "scripts"),
+  ].filter((p): p is string => Boolean(p)).find(fsExistsSync);
+
+  if (!skillDir) {
+    console.warn("📡 last30days: engine not installed — run scripts/install-last30days.sh");
+    return null;
+  }
+  const scriptPath = path.join(skillDir, "last30days.py");
+
+  try {
+    const { stdout } = await execFileAsync(
+      "python3",
+      // Flags first, then `--` so a company name can never be parsed as a flag
+      [scriptPath, "--emit=context", "--quick", "--", companyName],
+      {
+        timeout: 75_000,
+        env: { ...process.env },
+        maxBuffer: 1024 * 1024,
+      }
+    );
+    const result = stdout.trim();
+
+    // Quality gate — a degraded run still emits a well-formed but empty block.
+    // Injecting "no evidence found" into prompts hurts more than it helps.
+    const clusterSection = result.split("Top clusters:")[1] ?? "";
+    const noEvidence =
+      !result ||
+      result.includes("No candidates survived") ||
+      !/^- /m.test(clusterSection);
+    if (noEvidence) {
+      console.warn(`📡 last30days: no usable evidence for "${companyName}" — skipping enrichment`);
+      return null;
+    }
+
+    console.log(`📡 last30days: enrichment fetched for "${companyName}" (${result.length} chars)`);
+    return result;
+  } catch (err: any) {
+    const reason = err.code === "ENOENT" ? "python3 not found"
+      : err.killed ? "timed out after 75s"
+      : err.message?.slice(0, 80);
+    console.warn(`📡 last30days: skipped for "${companyName}" — ${reason}`);
+    return null;
+  }
+}
+
 // ─── CEO lookup via web search (minimal token footprint) ──────────────────────
 
 async function lookupCEO(companyName: string): Promise<string> {
@@ -383,7 +444,7 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
 
 // ─── Report Part A: overview + financials + strategy + market ─────────────────
 
-async function generatePartA(companyName: string, fmpFinancials?: FMPFinancials | null, currentCEO?: string): Promise<unknown> {
+async function generatePartA(companyName: string, fmpFinancials?: FMPFinancials | null, currentCEO?: string, socialContext?: string | null): Promise<unknown> {
   const ceo = currentCEO ?? await lookupCEO(companyName);
 
   // Build verified financial injection block from FMP data
@@ -410,9 +471,16 @@ ${fin.revenueHistory.map(r => `  ${r.year}: ${r.revenue} (${r.growth})`).join("\
 Use ALL of the above values verbatim in the financials object. Do not substitute your own estimates for any field that has been provided.`
     : `No verified financial data available (private or unlisted company). Use best estimates from training data where confident; return null for any value you cannot verify.`;
 
+  const socialBlock = socialContext
+    ? `CURRENT INTELLIGENCE — LAST 30 DAYS (Reddit, X, YouTube, Hacker News, GitHub, Polymarket):
+${socialContext}
+
+Use this real-time signal to strengthen: executiveSummary.highlights, marketAnalysis.marketTrends, strategy.coreInitiatives. Prioritise recent facts over training-data assumptions where they conflict. Do not fabricate sources or citations.`
+    : "";
+
   const prompt = `Generate strategic intelligence PART A for: ${companyName}
 
-EXECUTIVE INSTRUCTIONS
+${socialBlock ? socialBlock + "\n\n" : ""}EXECUTIVE INSTRUCTIONS
 - Set executiveSummary.ceo to exactly: ${ceo}
 - Do NOT include the CEO in keyExecutives.
 - keyExecutives: 3–8 other verified senior leaders (CFO, COO, CTO, division presidents). Real names only. Omit anyone you cannot verify. Never invent or recombine names.
@@ -488,7 +556,7 @@ Return ONLY this JSON:
 
 // ─── Report Part B: tech + ESG + SWOT + growth + risk + digital ──────────────
 
-async function generatePartB(companyName: string, esgData?: FMPESGData | null): Promise<unknown> {
+async function generatePartB(companyName: string, esgData?: FMPESGData | null, socialContext?: string | null): Promise<unknown> {
   // Build verified ESG injection block from FMP data
   const esgBlock = esgData
     ? `VERIFIED ESG DATA (Financial Modeling Prep — use verbatim, do not alter):
@@ -503,9 +571,16 @@ async function generatePartB(companyName: string, esgData?: FMPESGData | null): 
 Use ALL values verbatim in the esg object. Set overallRating to "${esgData.esgRating} (FMP)". Do not substitute estimates for any provided field.`
     : `No verified ESG data available. Use best estimates from training data; return null for any value you cannot verify.`;
 
+  const socialBlock = socialContext
+    ? `CURRENT INTELLIGENCE — LAST 30 DAYS (Reddit, X, YouTube, Hacker News, GitHub, Polymarket):
+${socialContext}
+
+Use this real-time signal to strengthen: swot (opportunities and threats especially), riskAssessment.risks, growthOpportunities.opportunities, digitalTransformation. Prioritise recent facts over training-data assumptions where they conflict. Do not fabricate sources or citations.`
+    : "";
+
   const prompt = `Generate strategic intelligence PART B for: ${companyName}
 
-${esgBlock}
+${socialBlock ? socialBlock + "\n\n" : ""}${esgBlock}
 
 Return ONLY this JSON:
 {
@@ -603,17 +678,18 @@ Return ONLY this JSON:
 export async function generateReport(companyName: string): Promise<unknown> {
   const start = Date.now();
 
-  // FMP lookup (financials + ESG) and CEO lookup run in parallel —
-  // both are external HTTP calls with no Anthropic token cost.
-  const [fmpData, currentCEO] = await Promise.all([
+  // FMP, CEO, and last30days all run in parallel — all are external calls
+  // with no Anthropic token cost. last30days is best-effort and may return null.
+  const [fmpData, currentCEO, socialContext] = await Promise.all([
     lookupFMP(companyName),
     lookupCEO(companyName),
+    runLast30Days(companyName),
   ]);
 
   // Part A and Part B run sequentially to respect Anthropic token rate limits.
   // CEO is passed in to avoid a second web search call inside generatePartA.
-  const partA = await generatePartA(companyName, fmpData.financials, currentCEO);
-  const partB = await generatePartB(companyName, fmpData.esg);
+  const partA = await generatePartA(companyName, fmpData.financials, currentCEO, socialContext);
+  const partB = await generatePartB(companyName, fmpData.esg, socialContext);
 
   console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (FMP + CEO + Haiku x2)`);
 

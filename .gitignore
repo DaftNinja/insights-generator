@@ -5,3 +5,6 @@ dist/
 .DS_Store
 drizzle/
 *.log
+
+# last30days engine — installed at build time via scripts/install-last30days.sh
+tools/last30days/
