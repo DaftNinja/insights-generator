@@ -3,7 +3,7 @@ nixPkgs = ["nodejs_20", "python312", "git"]
 
 [phases.install]
 cmds = [
-  "npm install",
+  "npm install --include=dev",
   "bash scripts/install-last30days.sh"
 ]
 
