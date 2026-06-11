@@ -31,7 +31,7 @@ const MODEL_FAST     = "claude-haiku-4-5-20251001";
 // Single integration covering financials and ESG scores. One key, one dependency.
 
 const FMP_KEY  = process.env.FMP_API_KEY ?? "";
-const FMP_BASE = "https://financialmodelingprep.com/api";
+const FMP_BASE = "https://financialmodelingprep.com/stable";
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -101,9 +101,12 @@ function fmtPct(n: number | undefined | null): string {
 async function fmpGet<T>(path: string): Promise<T | null> {
   if (!FMP_KEY) return null;
   try {
-    const res = await fetch(`${FMP_BASE}${path}&apikey=${FMP_KEY}`);
+    // path already contains ? params (e.g. /income-statement?symbol=BARC.L&limit=5)
+    const url = `${FMP_BASE}${path}&apikey=${FMP_KEY}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) {
-      console.warn(`FMP ${path} → ${res.status}`);
+      const body = await res.text().catch(() => '');
+      console.warn(`FMP ${path} → ${res.status}: ${body.slice(0, 150)}`);
       return null;
     }
     return await res.json() as T;
@@ -119,7 +122,7 @@ async function resolveFMPTicker(companyName: string): Promise<string | null> {
   if (!FMP_KEY) { console.warn("FMP_API_KEY not set — skipping FMP lookup"); return null; }
   console.log(`📈 FMP key present (length=${FMP_KEY.length}, first4=${FMP_KEY.slice(0,4)})`);
   try {
-    const searchUrl = `${FMP_BASE}/v3/search?query=${encodeURIComponent(companyName)}&limit=5&apikey=${FMP_KEY}`;
+    const searchUrl = `${FMP_BASE}/search-name?query=${encodeURIComponent(companyName)}&limit=5&apikey=${FMP_KEY}`;
     console.log(`📈 FMP searching: ${searchUrl.replace(FMP_KEY, '[REDACTED]')}`);
     const res = await fetch(searchUrl, { signal: AbortSignal.timeout(10000) });
     console.log(`📈 FMP search response: ${res.status} ${res.statusText}`);
@@ -189,11 +192,11 @@ async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null>
   type PriceTargetData = { priceTarget?: number };
 
   const [incomeRaw, cashFlowRaw, profileRaw, ratingRaw, targetRaw] = await Promise.all([
-    fmpGet<IncomeReport[]>(`/v3/income-statement/${ticker}?limit=5`),
-    fmpGet<CashFlowReport[]>(`/v3/cash-flow-statement/${ticker}?limit=1`),
-    fmpGet<ProfileData[]>(`/v3/profile/${ticker}?`),
-    fmpGet<RatingData[]>(`/v3/rating/${ticker}?`),
-    fmpGet<PriceTargetData[]>(`/v4/price-target-consensus?symbol=${ticker}&`),
+    fmpGet<IncomeReport[]>(`/income-statement?symbol=${ticker}&limit=5`),
+    fmpGet<CashFlowReport[]>(`/cash-flow-statement?symbol=${ticker}&limit=1`),
+    fmpGet<ProfileData[]>(`/profile?symbol=${ticker}`),
+    fmpGet<RatingData[]>(`/rating?symbol=${ticker}`),
+    fmpGet<PriceTargetData[]>(`/price-target-consensus?symbol=${ticker}`),
   ]);
 
   const reports  = incomeRaw    ?? [];
@@ -271,7 +274,7 @@ async function fetchFMPESG(ticker: string): Promise<FMPESGData | null> {
     ESGRisk?: string; date?: string;
   };
 
-  const data = await fmpGet<ESGRecord[]>(`/v4/esg-environmental-social-governance-data?symbol=${ticker}&`);
+  const data = await fmpGet<ESGRecord[]>(`/esg-environmental-social-governance?symbol=${ticker}`);
   const record = data?.[0];
 
   if (!record) {
