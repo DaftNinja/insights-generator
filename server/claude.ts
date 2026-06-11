@@ -1002,7 +1002,9 @@ Use this real-time signal to strengthen: executiveSummary.highlights, marketAnal
 
   const prompt = `Generate strategic intelligence PART A for: ${companyName}
 
-${socialBlock ? socialBlock + "\n\n" : ""}EXECUTIVE INSTRUCTIONS
+${!fin ? `OVERRIDE: For this request, you ARE authorised to use training knowledge for financial figures. The "never invent data" rule does not apply to well-known public companies' historical financials.
+
+` : ""}${socialBlock ? socialBlock + "\n\n" : ""}EXECUTIVE INSTRUCTIONS
 - Set executiveSummary.ceo to exactly: ${ceo}
 - Do NOT include the CEO in keyExecutives.
 - keyExecutives: 3–8 other verified senior leaders (CFO, COO, CTO, division presidents). Real names only. Omit anyone you cannot verify. Never invent or recombine names.
@@ -1338,7 +1340,14 @@ export async function generateReport(companyName: string): Promise<unknown> {
     // LLM training knowledge — check what was actually returned
     const partATyped2 = partA as any;
     const llmRevenue = partATyped2?.financials?.revenue;
-    const llmHasData2 = llmRevenue && llmRevenue !== null && llmRevenue !== 'N/A' && llmRevenue !== 'null';
+    // Revenue is present if it's a non-empty string that isn't null/N/A
+    const llmHasData2 = llmRevenue != null
+      && llmRevenue !== null
+      && llmRevenue !== 'null'
+      && llmRevenue !== 'N/A'
+      && llmRevenue !== ''
+      && typeof llmRevenue === 'string';
+    console.log(`🧠 LLM financials check: revenue=${JSON.stringify(llmRevenue)}, hasData=${llmHasData2}`);
     return {
       source:      "LLM" as const,
       confidence:  llmHasData2 ? "estimated" as const : "unavailable" as const,
