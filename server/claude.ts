@@ -119,12 +119,18 @@ async function resolveFMPTicker(companyName: string): Promise<string | null> {
   if (!FMP_KEY) { console.warn("FMP_API_KEY not set — skipping FMP lookup"); return null; }
   console.log(`📈 FMP key present (length=${FMP_KEY.length}, first4=${FMP_KEY.slice(0,4)})`);
   try {
-    const res = await fetch(
-      `${FMP_BASE}/v3/search?query=${encodeURIComponent(companyName)}&limit=5&apikey=${FMP_KEY}`
-    );
-    if (!res.ok) return null;
+    const searchUrl = `${FMP_BASE}/v3/search?query=${encodeURIComponent(companyName)}&limit=5&apikey=${FMP_KEY}`;
+    console.log(`📈 FMP searching: ${searchUrl.replace(FMP_KEY, '[REDACTED]')}`);
+    const res = await fetch(searchUrl, { signal: AbortSignal.timeout(10000) });
+    console.log(`📈 FMP search response: ${res.status} ${res.statusText}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '(unreadable)');
+      console.warn(`📈 FMP error body: ${body.slice(0, 200)}`);
+      return null;
+    }
 
     const results = await res.json() as { symbol: string; name: string; exchangeShortName?: string }[];
+    console.log(`📈 FMP results: ${JSON.stringify(results.slice(0,3))}`);
     if (!results?.length) return null;
 
     const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
