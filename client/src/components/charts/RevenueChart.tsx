@@ -13,7 +13,8 @@ interface RevenueChartProps {
 }
 
 // Strip any currency symbol (£, €, ¥, $, etc.) and commas before parsing
-function parseRevenue(str: string): number {
+function parseRevenue(str: string | null | undefined): number {
+  if (!str || typeof str !== "string") return 0;
   const s = str.replace(/[^0-9.TBM]/gi, "");
   if (s.toUpperCase().endsWith("T")) return parseFloat(s) * 1000;
   if (s.toUpperCase().endsWith("B")) return parseFloat(s);
@@ -22,7 +23,8 @@ function parseRevenue(str: string): number {
 }
 
 // Detect the currency symbol used in the raw string so the tooltip matches
-function detectSymbol(str: string): string {
+function detectSymbol(str: string | null | undefined): string {
+  if (!str) return "$";
   if (str.includes("£")) return "£";
   if (str.includes("€")) return "€";
   if (str.includes("¥")) return "¥";
@@ -42,11 +44,13 @@ const CustomTooltip = ({ active, payload, label, symbol }: any) => {
 };
 
 export function RevenueChart({ data }: RevenueChartProps) {
-  const chartData = data.map((d) => ({
-    year: d.year,
-    revenue: parseRevenue(d.revenue),
-    growth: d.growth,
-  }));
+  const chartData = data
+    .filter((d) => d.revenue && d.revenue !== "N/A" && d.revenue !== "null")
+    .map((d) => ({
+      year: d.year,
+      revenue: parseRevenue(d.revenue),
+      growth: d.growth,
+    }));
 
   // Detect currency from the first data point that has a value
   const symbol = detectSymbol(data[0]?.revenue ?? "");
