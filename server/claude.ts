@@ -505,9 +505,101 @@ async function fetchYahooFinancials(ticker: string): Promise<FMPFinancials | nul
 }
 
 export async function lookupYahoo(companyName: string): Promise<FMPFinancials | null> {
-  const ticker = await resolveYahooTicker(companyName);
-  if (!ticker) return null;
-  return fetchYahooFinancials(ticker);
+  // Yahoo Finance blocks server-side requests with 401/429.
+  // Use Claude web search instead — pulls live data from financial news, annual reports etc.
+  return lookupFinancialsViaWebSearch(companyName);
+}
+
+// ─── Financial data via Claude web search ──────────────────────────────────────────────────────────────────────
+// Used when FMP plan doesn't cover the symbol. Uses a targeted web search
+// to pull financial data from annual reports, financial news, and data sites.
+// Returns structured JSON matching FMPFinancials so the rest of the pipeline
+// treats it identically to verified FMP data.
+
+async function lookupFinancialsViaWebSearch(companyName: string): Promise<FMPFinancials | null> {
+  try {
+    console.log(`🔍 Web search financial lookup for "${companyName}"...`);
+    const message = await client.messages.create({
+      model: MODEL_GROUNDED,
+      max_tokens: 1500,
+      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      system: `You are a financial data extraction assistant. Search for the company's latest financial data and return ONLY a valid JSON object. No markdown, no explanation, no code fences. The JSON must be parseable by JSON.parse().
+
+IMPORTANT ACCURACY RULES:
+- Only include figures you found in search results. Do not estimate or hallucinate.
+- Use the company's reporting currency (e.g. £ for UK companies, € for EU).
+- Revenue and net income should be from the most recent full fiscal year annual report.
+- Market cap should be the current figure.
+- Return null for any field you cannot find with confidence.`,
+      messages: [{
+        role: "user",
+        content: `Search for the latest financial data for ${companyName} and return this exact JSON structure with real figures from search results:
+{
+  "ticker": "primary stock ticker (e.g. BARC.L or null)",
+  "fiscalYear": "e.g. FY2024",
+  "revenue": "e.g. £25.4B or null",
+  "revenueGrowth": "e.g. +5.2% YoY or null",
+  "netIncome": "e.g. £5.3B or null",
+  "ebitda": "e.g. £8.1B or null",
+  "grossMargin": "e.g. 45.2% or null",
+  "operatingMargin": "e.g. 21.3% or null",
+  "marketCap": "e.g. £34.5B or null",
+  "stockPrice": "e.g. £2.74 or null",
+  "peRatio": "e.g. 8.2x or null",
+  "epsAnnual": "e.g. £0.33 or null",
+  "analystTarget": "e.g. £3.20 or null",
+  "analystRating": "e.g. buy or null",
+  "employees": "e.g. 85,000 or null",
+  "revenueHistory": [
+    {"year": "2021", "revenue": "e.g. £21.9B", "growth": "e.g. +3.1%"},
+    {"year": "2022", "revenue": "e.g. £22.4B", "growth": "e.g. +2.3%"},
+    {"year": "2023", "revenue": "e.g. £24.0B", "growth": "e.g. +7.1%"},
+    {"year": "2024", "revenue": "e.g. £25.4B", "growth": "e.g. +5.8%"}
+  ]
+}
+Only include revenueHistory entries where you found actual figures. Return null for fields you cannot verify.`
+      }],
+    });
+
+    const text = message.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map(b => b.text)
+      .join("")
+      .replace(/<cite[^>]*>[\s\S]*?<\/cite>/g, "")
+      .replace(/^```json\n?/, "").replace(/\n?```$/, "")
+      .trim();
+
+    if (!text || !text.startsWith("{")) {
+      console.warn(`🔍 Web search financial lookup: no JSON in response for "${companyName}"`);
+      return null;
+    }
+
+    const d = JSON.parse(text) as any;
+
+    console.log(`🔍 Web search financials for "${companyName}": revenue=${d.revenue}, mktCap=${d.marketCap}`);
+
+    return {
+      ticker:          d.ticker ?? companyName,
+      fiscalYear:      d.fiscalYear ?? `FY${new Date().getFullYear() - 1}`,
+      revenue:         d.revenue ?? "N/A",
+      revenueGrowth:   d.revenueGrowth ?? "N/A",
+      netIncome:       d.netIncome ?? "N/A",
+      ebitda:          d.ebitda ?? "N/A",
+      grossMargin:     d.grossMargin ?? "N/A",
+      operatingMargin: d.operatingMargin ?? "N/A",
+      marketCap:       d.marketCap ?? "N/A",
+      stockPrice:      d.stockPrice ?? "N/A",
+      peRatio:         d.peRatio ?? "N/A",
+      epsAnnual:       d.epsAnnual ?? "N/A",
+      analystTarget:   d.analystTarget ?? "N/A",
+      analystRating:   d.analystRating ?? "N/A",
+      employees:       d.employees ?? null,
+      revenueHistory:  Array.isArray(d.revenueHistory) ? d.revenueHistory : [],
+    };
+  } catch (err) {
+    console.warn(`Web search financial lookup failed for "${companyName}":`, err);
+    return null;
+  }
 }
 
 // ─── Wikipedia Fallback ───────────────────────────────────────────────────────
