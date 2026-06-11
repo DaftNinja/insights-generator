@@ -601,6 +601,8 @@ Return ONLY this JSON:
     "environmentScore": "e.g. 68.1 / 100 or null",
     "socialScore": "e.g. 75.2 / 100 or null",
     "governanceScore": "e.g. 71.0 / 100 or null",
+    "governanceRating": "e.g. Strong / Moderate / Weak or null",
+    "boardDiversity": "e.g. 40% female representation or null",
     "netZeroTarget": "e.g. 2030 / 2050 / Not committed or null",
     "environmentalInitiatives": ["Initiative 1", "Initiative 2"],
     "socialInitiatives": ["Initiative 1", "Initiative 2"],
