@@ -6,7 +6,7 @@ Strategic business intelligence platform powered by Claude AI. Enter any company
 
 ## Stack
 
-- **AI**: Anthropic Claude (`claude-sonnet-4-5`)
+- **AI**: Anthropic Claude (`claude-sonnet-4-6`)
 - **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS + Recharts
 - **Backend**: Express 5 + TypeScript + Node 20
 - **Database**: PostgreSQL + Drizzle ORM
