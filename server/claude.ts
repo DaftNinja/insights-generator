@@ -319,6 +319,66 @@ export async function lookupFMP(companyName: string): Promise<{
 // When FMP returns no financials (plan limitation), generatePartA handles the
 // LLM fallback directly via the finBlock prompt. No separate function needed.
 
+// ─── Private company web intelligence ────────────────────────────────────────
+// Runs targeted web searches for funding, investors, and key deals when FMP
+// returns no data. Particularly valuable for private/unlisted companies where
+// press releases, Companies House, and PitchBook have the real story.
+
+interface PrivateCompanyIntel {
+  fundingTotal:    string | null;  // e.g. "$735M"
+  investors:       string[];       // e.g. ["Infratil (53%)", "Legal & General Capital (32%)"]
+  debtFacilities:  string | null;  // e.g. "£206M Deutsche Bank"
+  keyDeals:        string[];       // e.g. ["22MW AI deal with Nebius"]
+  revenueEstimate: string | null;  // e.g. "$4.6M–$8.6M (estimated)"
+  employees:       string | null;  // e.g. "40–50"
+  rawContext:      string;         // Full text for injection into prompt
+}
+
+async function lookupPrivateCompanyIntel(companyName: string): Promise<PrivateCompanyIntel | null> {
+  try {
+    console.log(`🔎 Private company intel lookup for "${companyName}"...`);
+    const message = await client.messages.create({
+      model: MODEL_GROUNDED,
+      max_tokens: 1200,
+      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      system: `You are a business intelligence researcher. Search for funding, investors, key deals, and financial data for private companies. Return ONLY a valid JSON object. No markdown, no explanation, no code fences.`,
+      messages: [{
+        role: "user",
+        content: `Search the web for business intelligence on "${companyName}" — specifically: investors, funding rounds, debt facilities, key contracts/deals, revenue estimates, and employee count. Return this exact JSON (use null for fields you cannot find):
+{
+  "fundingTotal": "Total equity investment received, e.g. $735M or null",
+  "investors": ["Investor name and stake if known, e.g. Infratil (53%)"],
+  "debtFacilities": "Debt raised, lender, and purpose, e.g. £206M Deutsche Bank for European expansion or null",
+  "keyDeals": ["Key contract or partnership, e.g. 22MW AI infrastructure deal with Nebius"],
+  "revenueEstimate": "Revenue estimate from any source, e.g. $4.6M-$8.6M (estimated) or null",
+  "employees": "Headcount estimate, e.g. 40-50 or null",
+  "rawContext": "2-3 sentence summary of the most important business intelligence you found"
+}`
+      }],
+    });
+
+    const text = message.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map(b => b.text)
+      .join("")
+      .replace(/<cite[^>]*>[\s\S]*?<\/cite>/g, "")
+      .replace(/^```json\n?/, "").replace(/\n?```$/, "")
+      .trim();
+
+    if (!text || !text.startsWith("{")) {
+      console.warn(`🔎 Private intel: no JSON returned for "${companyName}"`);
+      return null;
+    }
+
+    const d = JSON.parse(text) as PrivateCompanyIntel;
+    console.log(`🔎 Private intel for "${companyName}": funding=${d.fundingTotal}, investors=${d.investors?.length ?? 0}, deals=${d.keyDeals?.length ?? 0}`);
+    return d;
+  } catch (err) {
+    console.warn(`Private company intel lookup failed for "${companyName}":`, err);
+    return null;
+  }
+}
+
 // ─── Wikipedia Fallback ───────────────────────────────────────────────────────
 
 function parseInfoboxField(text: string, ...keys: string[]): string | null {
@@ -637,6 +697,7 @@ async function generatePartA(
   currentCEO?: string,
   wikiData?: WikipediaData | null,
   socialContext?: string | null,
+  privateIntel?: PrivateCompanyIntel | null,
 ): Promise<unknown> {
   const ceo = currentCEO ?? await lookupCEO(companyName);
 
@@ -686,8 +747,23 @@ Note: This company is private/unlisted. No stock price, market cap, P/E ratio, o
 Use the Wikipedia figures above for revenue, employees, and other available fields. Set executiveSummary.employees verbatim from the Wikipedia figure above if present.
 For unavailable fields (stock price, market cap, EPS, analyst target), return null.`;
   } else {
-    finBlock = `No verified financial data is available from a live API for ${companyName}.
+    const privateBlock = privateIntel ? `
+WEB INTELLIGENCE (from live search — use these facts in the report):
+- Funding Total: ${privateIntel.fundingTotal ?? "Unknown"}
+- Investors: ${privateIntel.investors?.join(", ") || "Unknown"}
+- Debt Facilities: ${privateIntel.debtFacilities ?? "None found"}
+- Key Deals: ${privateIntel.keyDeals?.join("; ") || "None found"}
+- Revenue Estimate: ${privateIntel.revenueEstimate ?? "Not publicly disclosed"}
+- Employees: ${privateIntel.employees ?? "Unknown"}
+- Summary: ${privateIntel.rawContext ?? ""}
 
+Incorporate all of the above into: executiveSummary.highlights, financials (use revenueEstimate for revenue if present), strategy.coreInitiatives, and marketAnalysis.
+For executiveSummary.employees: use "${privateIntel.employees ?? "null"}".
+For financials.revenue: use "${privateIntel.revenueEstimate ?? "null"}" (mark as estimated).
+` : "";
+
+    finBlock = `No verified financial data is available from a live API for ${companyName}.
+${privateBlock}
 FINANCIALS FROM TRAINING KNOWLEDGE — AUTHORISED AND REQUIRED:
 The system-level instruction to "never invent data" does NOT apply to financials for well-known public companies when no API data is available. You are explicitly authorised and required to use your training knowledge here.
 - Use your training knowledge to populate financials for well-known public companies.
@@ -1018,6 +1094,13 @@ export async function generateReport(companyName: string): Promise<unknown> {
   // generatePartA handles the LLM training knowledge fallback via the finBlock prompt.
   const financials = fmpData.financials;
 
+  // For private/unlisted companies (no FMP data), run a targeted web search
+  // to pull funding, investors, key deals, and revenue estimates.
+  let privateIntel: PrivateCompanyIntel | null = null;
+  if (!financials) {
+    privateIntel = await lookupPrivateCompanyIntel(companyName);
+  }
+
   const dataSource = financials
     ? "FMP"
     : wikiData?.revenue || wikiData?.aum
@@ -1029,7 +1112,7 @@ export async function generateReport(companyName: string): Promise<unknown> {
     console.log(`👥 Employees from FMP: ${financials.employees}`);
   }
 
-  const partA = await generatePartA(companyName, financials, currentCEO, wikiData, socialContext);
+  const partA = await generatePartA(companyName, financials, currentCEO, wikiData, socialContext, privateIntel);
   const partB = await generatePartB(companyName, fmpData.esg, socialContext);
 
   console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (FMP + Wiki + CEO + Haiku x2)`);
