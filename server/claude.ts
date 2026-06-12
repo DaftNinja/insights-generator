@@ -642,51 +642,66 @@ async function lookupCEO(companyName: string): Promise<string> {
 // ─── Core caller (Haiku, no tools) ───────────────────────────────────────────
 
 async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
-  const message = await client.messages.create({
-    model: MODEL_FAST,
-    max_tokens: maxTokens,
-    system: SYSTEM,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  if (message.stop_reason === "max_tokens") {
-    console.error(`Response truncated at ${maxTokens} tokens — increase max_tokens`);
-    throw new Error("Response was too long and got cut off. Please try again.");
-  }
-
-  const text = message.content[0].type === "text" ? message.content[0].text : "";
-  if (!text) throw new Error("Empty response from Claude API");
-
-  const cleaned = text.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
-
-  try {
-    return JSON.parse(cleaned);
-  } catch (firstErr) {
+  // Retry up to 3 times on rate limits, respecting the retry-after header
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      let repaired = cleaned;
-      let inString = false;
-      let escape = false;
-      const stack: string[] = [];
-      for (const ch of repaired) {
-        if (escape) { escape = false; continue; }
-        if (ch === '\\' && inString) { escape = true; continue; }
-        if (ch === '"') { inString = !inString; continue; }
-        if (!inString) {
-          if (ch === '{') stack.push('}');
-          else if (ch === '[') stack.push(']');
-          else if ((ch === '}' || ch === ']') && stack.length) stack.pop();
+      const message = await client.messages.create({
+        model: MODEL_FAST,
+        max_tokens: maxTokens,
+        system: SYSTEM,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      if (message.stop_reason === "max_tokens") {
+        console.error(`Response truncated at ${maxTokens} tokens — increase max_tokens`);
+        throw new Error("Response was too long and got cut off. Please try again.");
+      }
+
+      const text = message.content[0].type === "text" ? message.content[0].text : "";
+      if (!text) throw new Error("Empty response from Claude API");
+
+      const cleaned = text.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
+
+      try {
+        return JSON.parse(cleaned);
+      } catch (firstErr) {
+        try {
+          let repaired = cleaned;
+          let inString = false;
+          let escape = false;
+          const stack: string[] = [];
+          for (const ch of repaired) {
+            if (escape) { escape = false; continue; }
+            if (ch === '\\' && inString) { escape = true; continue; }
+            if (ch === '"') { inString = !inString; continue; }
+            if (!inString) {
+              if (ch === '{') stack.push('}');
+              else if (ch === '[') stack.push(']');
+              else if ((ch === '}' || ch === ']') && stack.length) stack.pop();
+            }
+          }
+          repaired = repaired.replace(/,\s*$/, "").replace(/"[^"]*$/, '"..."}');
+          repaired += stack.reverse().join("");
+          const result = JSON.parse(repaired);
+          console.warn(`⚠️  JSON repair succeeded — response was likely truncated at ${maxTokens} tokens`);
+          return result;
+        } catch {
+          console.error("JSON parse failed (and repair failed). Raw:", cleaned.slice(0, 500));
+          throw new Error("Failed to parse API response. Please try again.");
         }
       }
-      repaired = repaired.replace(/,\s*$/, "").replace(/"[^"]*$/, '"..."}');
-      repaired += stack.reverse().join("");
-      const result = JSON.parse(repaired);
-      console.warn(`⚠️  JSON repair succeeded — response was likely truncated at ${maxTokens} tokens`);
-      return result;
-    } catch {
-      console.error("JSON parse failed (and repair failed). Raw:", cleaned.slice(0, 500));
-      throw new Error("Failed to parse API response. Please try again.");
+    } catch (err: any) {
+      if (err?.status === 429 && attempt < 2) {
+        const retryAfter = parseInt(err?.headers?.['retry-after'] ?? '60', 10);
+        const waitMs = (retryAfter + 3) * 1000;
+        console.warn(`⏳ Rate limited (429) in callClaude — waiting ${retryAfter}s before attempt ${attempt + 2}...`);
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+      throw err;
     }
   }
+  throw new Error("Failed after 3 attempts");
 }
 
 // ─── Report Part A: overview + financials + strategy + market ─────────────────
