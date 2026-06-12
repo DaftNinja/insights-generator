@@ -3,6 +3,7 @@
 Strategic business intelligence platform powered by Claude AI. Enter any company name and get a comprehensive 10-section report — financials, strategy, market analysis, tech spend, ESG, SWOT, growth opportunities, risk assessment, digital transformation, and sales enablement — in under 60 seconds.
 
 ---
+<img width="12913" height="2948" alt="diagram" src="https://github.com/user-attachments/assets/0f59ff47-aa1b-45d9-b865-52d29769314e" />
 
 ## Stack
 
