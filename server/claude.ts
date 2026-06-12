@@ -545,6 +545,7 @@ MISSING DATA POLICY
 - Unknown objects → {}
 - Never fabricate: funding amounts, acquisition dates, executive names, office locations, or customer counts.
 - Financial figures (revenue, netIncome, marketCap, employees) for well-known public companies: use training knowledge when explicitly instructed, do not return null.
+- WEB INTELLIGENCE blocks in the prompt contain verified live data — always use them verbatim, they override this policy.
 
 EXECUTIVE VALIDATION RULES
 Before returning any executive name:
@@ -762,23 +763,8 @@ Note: This company is private/unlisted. No stock price, market cap, P/E ratio, o
 Use the Wikipedia figures above for revenue, employees, and other available fields. Set executiveSummary.employees verbatim from the Wikipedia figure above if present.
 For unavailable fields (stock price, market cap, EPS, analyst target), return null.`;
   } else {
-    const privateBlock = privateIntel ? `
-WEB INTELLIGENCE (from live search — use these facts in the report):
-- Funding Total: ${privateIntel.fundingTotal ?? "Unknown"}
-- Investors: ${privateIntel.investors?.join(", ") || "Unknown"}
-- Debt Facilities: ${privateIntel.debtFacilities ?? "None found"}
-- Key Deals: ${privateIntel.keyDeals?.join("; ") || "None found"}
-- Revenue Estimate: ${privateIntel.revenueEstimate ?? "Not publicly disclosed"}
-- Employees: ${privateIntel.employees ?? "Unknown"}
-- Summary: ${privateIntel.rawContext ?? ""}
-
-Incorporate all of the above into: executiveSummary.highlights, financials (use revenueEstimate for revenue if present), strategy.coreInitiatives, and marketAnalysis.
-For executiveSummary.employees: use "${privateIntel.employees ?? "null"}".
-For financials.revenue: use "${privateIntel.revenueEstimate ?? "null"}" (mark as estimated).
-` : "";
-
     finBlock = `No verified financial data is available from a live API for ${companyName}.
-${privateBlock}
+
 FINANCIALS FROM TRAINING KNOWLEDGE — AUTHORISED AND REQUIRED:
 The system-level instruction to "never invent data" does NOT apply to financials for well-known public companies when no API data is available. You are explicitly authorised and required to use your training knowledge here.
 - Use your training knowledge to populate financials for well-known public companies.
@@ -813,6 +799,22 @@ Use this real-time signal to strengthen: executiveSummary.highlights, marketAnal
   const prompt = `Generate strategic intelligence PART A for: ${companyName}
 
 ${!fin ? `OVERRIDE: For this request, you ARE authorised to use training knowledge for financial figures. The "never invent data" rule does not apply to well-known public companies' historical financials.
+
+` : ""}${privateIntel ? `WEB INTELLIGENCE — VERIFIED LIVE DATA (incorporate ALL of these facts throughout the report):
+- Funding Total: ${privateIntel.fundingTotal ?? "Unknown"}
+- Investors: ${privateIntel.investors?.join(", ") || "Unknown"}
+- Debt Facilities: ${privateIntel.debtFacilities ?? "None found"}
+- Key Deals / Contracts: ${privateIntel.keyDeals?.join("; ") || "None found"}
+- Revenue Estimate: ${privateIntel.revenueEstimate ?? "Not publicly disclosed"}
+- Employees: ${privateIntel.employees ?? "Unknown"}
+- Context: ${privateIntel.rawContext ?? ""}
+
+These are FACTS from live web search. Use them in:
+• executiveSummary.highlights — lead with the funding/investor story and key deals
+• financials.revenue — use the revenue estimate above
+• executiveSummary.employees — use the employee count above
+• strategy.coreInitiatives — reference the key deals
+• marketAnalysis — reference investor backing as a competitive strength
 
 ` : ""}${socialBlock ? socialBlock + "\n\n" : ""}EXECUTIVE INSTRUCTIONS
 - Set executiveSummary.ceo to exactly: ${ceo}
