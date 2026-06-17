@@ -7,7 +7,7 @@ const TIMELINE = [
   {
     tag: "FOUNDATION",
     title: "AI-Powered Analysis Engine",
-    desc: "Built the core analysis engine using Claude (Anthropic) to generate comprehensive 10-section strategic reports covering financials, strategy, market position, and more.",
+    desc: "Built the core analysis engine using AI to generate comprehensive 10-section strategic reports covering financials, strategy, market position, and more.",
     color: "border-blue-200 bg-blue-50/50",
     tagColor: "text-blue-600",
   },
@@ -267,11 +267,11 @@ export function Mission() {
       <section className="space-y-4">
         <div className="rounded-xl border border-amber-900/30 bg-amber-950/10 px-6 py-4">
           <p className="text-xs text-amber-400/80 leading-relaxed">
-            <strong>Data Disclaimer:</strong> Reports are generated using AI (Claude by Anthropic) and are intended for informational and strategic planning purposes. Data may not reflect the most current financials or public filings. Always verify critical data points against primary sources before making investment or business decisions.
+            <strong>Data Disclaimer:</strong> Reports are generated using AI and are intended for informational and strategic planning purposes. Data may not reflect the most current financials or public filings. Always verify critical data points against primary sources before making investment or business decisions.
           </p>
         </div>
         <p className="text-center text-xs text-[var(--text-muted)]">
-          Built by Stellanor — Strategic Business Intelligence, Powered by AI
+          Built for Stellanor by 1GigLabs — Strategic Business Intelligence, Powered by AI
         </p>
       </section>
 
