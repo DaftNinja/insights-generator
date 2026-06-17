@@ -802,10 +802,10 @@ function SalesTab({
   return (
     <div className="space-y-5">
       {/* Generator input */}
-      <div className="rounded-lg border border-violet-200 bg-violet-50 p-4 sm:p-6">
+      <div className="rounded-lg border border-[var(--primary-dim)] bg-[var(--bg-card)] p-4 sm:p-6">
         <div className="flex items-center gap-2 mb-2">
-          <span className="h-2 w-2 rounded-full bg-violet-500" />
-          <span className="text-sm font-semibold text-violet-700 uppercase tracking-wide">
+          <span className="h-2 w-2 rounded-full bg-[var(--primary)]" />
+          <span className="text-sm font-semibold text-[var(--primary)] uppercase tracking-wide">
             Sales Intelligence Generator
           </span>
         </div>
@@ -819,12 +819,12 @@ function SalesTab({
             onChange={(e) => setSellerProduct(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && onGenerate()}
             placeholder="e.g. Data governance platform for enterprise compliance…"
-            className="flex-1 rounded-lg border border-[var(--border)] bg-white px-4 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] px-4 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-dim)]"
           />
           <button
             onClick={onGenerate}
             disabled={loading || !sellerProduct.trim()}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-violet-500 active:scale-95 disabled:opacity-50 shrink-0"
+            className="btn-primary justify-center px-5 py-2.5 shrink-0"
           >
             {loading ? (
               <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -834,17 +834,28 @@ function SalesTab({
             ) : "Generate"}
           </button>
         </div>
+        {/* Stellanor default alignment shortcut */}
+        <button
+          onClick={() => { setSellerProduct(""); onGenerate(); }}
+          disabled={loading}
+          className="mt-3 flex items-center gap-1.5 text-xs text-[var(--primary)] hover:text-[var(--primary-hover)] transition-colors disabled:opacity-40"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+          </svg>
+          Generate default Stellanor alignment
+        </button>
       </div>
 
       {/* Sales content */}
       {sales && (
         <div className="space-y-5">
-          <div className="rounded-lg border border-violet-200 bg-violet-50 p-5">
-            <div className="section-title text-violet-400">Sales Summary</div>
+          <div className="rounded-lg border border-[var(--primary-dim)] bg-[var(--primary-light)] p-5">
+            <div className="section-title text-[var(--primary)]">Sales Summary</div>
             <p className="text-[var(--text-secondary)] leading-relaxed">{sales.salesSummary}</p>
             <div className="mt-3 flex items-center gap-3">
               <span className="text-xs text-[var(--text-muted)]">Total Opportunity Value:</span>
-              <span className="font-display text-lg font-bold text-violet-400">{sales.totalValueOpportunity}</span>
+              <span className="font-display text-lg font-bold text-[var(--primary)]">{sales.totalValueOpportunity}</span>
             </div>
           </div>
 
@@ -854,7 +865,7 @@ function SalesTab({
               <ul className="space-y-2">
                 {sales.conversationStarters.map((s, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
-                    <span className="text-violet-400 shrink-0 font-bold">{i + 1}.</span>{s}
+                    <span className="text-[var(--primary)] shrink-0 font-bold">{i + 1}.</span>{s}
                   </li>
                 ))}
               </ul>
@@ -881,7 +892,7 @@ function SalesTab({
                     <p className="text-sm text-[var(--text-primary)]">{pp.pain}</p>
                   </div>
                   <div>
-                    <div className="text-xs text-violet-400 mb-1">Your Solution</div>
+                    <div className="text-xs text-[var(--primary)] mb-1">Your Solution</div>
                     <p className="text-sm text-[var(--text-secondary)]">{pp.solution}</p>
                   </div>
                 </div>
@@ -929,7 +940,7 @@ function SalesTab({
             <div className="space-y-3">
               {sales.nextSteps.map((ns, i) => (
                 <div key={i} className="flex items-start gap-3">
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-100 border border-violet-200 text-xs font-bold text-violet-700 font-display">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--primary-light)] border border-[var(--primary-dim)] text-xs font-bold text-[var(--primary)] font-display">
                     {i + 1}
                   </div>
                   <div>
