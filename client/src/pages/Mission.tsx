@@ -271,7 +271,7 @@ export function Mission() {
           </p>
         </div>
         <p className="text-center text-xs text-[var(--text-muted)]">
-          Built by 1GigLabs — Strategic Business Intelligence, Powered by AI
+          Built by Stellanor — Strategic Business Intelligence, Powered by AI
         </p>
       </section>
 

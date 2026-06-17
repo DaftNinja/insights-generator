@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
+import { StellanorMark } from "@/components/StellanorLogo";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home" },
@@ -34,10 +35,8 @@ export function Navbar() {
           {/* Logo */}
           <Link href="/">
             <a className="flex items-center gap-2.5 group">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--primary)] text-white group-hover:bg-[var(--primary-hover)] transition-colors">
-                <span className="text-xs font-bold">1GL</span>
-              </div>
-              <span className="text-sm font-semibold text-[var(--text-primary)]">1GigLabs</span>
+              <StellanorMark size={32} />
+              <span className="text-sm font-semibold text-[var(--text-primary)]">Stellanor</span>
               <span className="hidden text-xs text-[var(--text-muted)] sm:block">Insight Generator</span>
             </a>
           </Link>

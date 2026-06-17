@@ -35,7 +35,7 @@ app.get("/api/health", (_req, res) => {
 const PgStore = connectPgSimple(session);
 const sessionMiddleware = session({
   store: new PgStore({ pool, createTableIfMissing: true }),
-  secret: process.env.SESSION_SECRET ?? "1giglabs-dev-secret-change-in-prod",
+  secret: process.env.SESSION_SECRET ?? "stellanor-dev-secret-change-in-prod",
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -69,7 +69,7 @@ app.use((req, res, next) => {
 // ─── Start listening ──────────────────────────────────────────────────────────
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 1GigLabs running on port ${PORT}`);
+  console.log(`🚀 Stellanor running on port ${PORT}`);
   console.log(`📁 Static: ${publicPath}`);
 });
 

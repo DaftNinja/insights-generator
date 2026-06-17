@@ -2,13 +2,14 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { StellanorMark } from "@/components/StellanorLogo";
 
 type Stage = "form" | "signup" | "sent";
 
 const ERROR_MESSAGES: Record<string, string> = {
   missing_token: "That link was missing a token. Request a new one below.",
   invalid_link: "That sign-in link is invalid or has expired. Request a new one below.",
-  account_disabled: "Your account has been deactivated. Contact contact@1giglabs.com.",
+  account_disabled: "Your account has been deactivated. Contact contact@stellanordc.com.",
   session_failed: "Something went wrong while signing you in. Please try again.",
   server_error: "The sign-in service hit an error. Please request a new link.",
 };
@@ -83,10 +84,8 @@ export function Login() {
       <div className="w-full max-w-md">
         <Link href="/">
           <a className="mb-8 flex items-center justify-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--primary)] text-white">
-              <span className="text-sm font-bold">1GL</span>
-            </div>
-            <span className="text-base font-semibold text-[var(--text-primary)]">1GigLabs</span>
+            <StellanorMark size={40} />
+            <span className="text-base font-semibold text-[var(--text-primary)]">Stellanor</span>
           </a>
         </Link>
 
@@ -170,7 +169,7 @@ export function Login() {
               </form>
 
               <p className="mt-6 text-center text-xs text-[var(--text-muted)]">
-                By signing in you agree to receive a one-time email from <span className="font-mono">contact@1giglabs.com</span>.
+                By signing in you agree to receive a one-time email from <span className="font-mono">contact@stellanordc.com</span>.
               </p>
             </>
           )}

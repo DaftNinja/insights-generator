@@ -39,7 +39,7 @@ export function Home() {
         <div className="animate-fade-up mb-5 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
           <span className="text-xs font-medium text-blue-700 uppercase tracking-widest">
-            AI-Powered Decision Intelligence
+            Stellanor Intelligence Platform
           </span>
         </div>
 

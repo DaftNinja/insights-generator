@@ -6,7 +6,7 @@ export function Demo() {
       <PageHeader
         label="Product Demo"
         title="See It In Action"
-        subtitle="A walkthrough of the 1GigLabs Insight Generator — from company search to full strategic report."
+        subtitle="A walkthrough of the Stellanor Insight Generator — from company search to full strategic report."
       />
 
       <div className="max-w-4xl animate-fade-up">

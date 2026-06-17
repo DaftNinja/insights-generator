@@ -1,32 +1,60 @@
-import React from "react";
-
-interface LogoProps {
+interface StellanorLogoProps {
+  size?: number;
   className?: string;
-  showText?: boolean;
 }
 
-export const StellanorLogo: React.FC<LogoProps> = ({ className = "h-8 w-8", showText = true }) => {
+// The Stellanor mark: a stylised "S" formed from two arcing data-flow paths,
+// suggesting intelligence in motion. Clean, modern, data-company aesthetic.
+export function StellanorMark({ size = 32, className = "" }: StellanorLogoProps) {
   return (
-    <div className="flex items-center gap-3">
-      {/* Geometric North Star Icon */}
-      <svg 
-        className={`{className} text-teal-400 animate-pulse-slow`} 
-        viewBox="0 0 100 100" 
-        fill="none" 
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path 
-          d="M50 5 L56 38 L89 44 L56 50 L50 83 L44 50 L11 44 L44 38 Z" 
-          fill="currentColor"
-        />
-        <circle cx="50" cy="50" r="6" fill="#0f172a" />
-      </svg>
-
-      {showText && (
-        <span className="font-sans font-bold tracking-wider text-xl text-slate-100">
-          STELLA<span className="text-teal-400">NORD</span>
-        </span>
-      )}
-    </div>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-label="Stellanor"
+    >
+      {/* Background rounded square */}
+      <rect width="32" height="32" rx="7" fill="#1a56db" />
+      {/* Top arc — upper sweep of the S */}
+      <path
+        d="M9 11.5C9 9.57 10.57 8 12.5 8H19.5C21.43 8 23 9.57 23 11.5C23 13.43 21.43 15 19.5 15H12.5C10.57 15 9 16.57 9 18.5"
+        stroke="white"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Bottom arc — lower sweep of the S */}
+      <path
+        d="M23 20.5C23 22.43 21.43 24 19.5 24H12.5C10.57 24 9 22.43 9 20.5"
+        stroke="white"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Central data node */}
+      <circle cx="16" cy="16" r="2" fill="white" />
+    </svg>
   );
-};
+}
+
+// Full wordmark: mark + "Stellanor" text
+export function StellanorWordmark({ size = 32, className = "" }: StellanorLogoProps) {
+  return (
+    <span className={`inline-flex items-center gap-2.5 ${className}`}>
+      <StellanorMark size={size} />
+      <span
+        style={{
+          fontSize: size * 0.44,
+          fontWeight: 600,
+          letterSpacing: "-0.01em",
+          lineHeight: 1,
+        }}
+      >
+        Stellanor
+      </span>
+    </span>
+  );
+}
