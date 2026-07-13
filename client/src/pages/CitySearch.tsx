@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Layout, PageHeader } from "@/components/Layout";
 import { api } from "@/lib/api";
@@ -231,18 +231,49 @@ function TickerBadge({ ticker, isPrivate }: { ticker: string; isPrivate: boolean
   );
 }
 
-// ─── Research button (per row) ────────────────────────────────────────────────
+// ─── Slugify (mirrors server/storage.ts) ─────────────────────────────────────
 
-function ResearchButton({ companyName }: { companyName: string }) {
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+// ─── Research / View report button (per row) ──────────────────────────────────
+
+function ResearchButton({
+  companyName, country, city, existingSlug, onGenerated,
+}: {
+  companyName: string;
+  country: string;
+  city: string;
+  existingSlug?: string;
+  onGenerated?: (slug: string) => void;
+}) {
   const [, navigate] = useLocation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  if (existingSlug) {
+    return (
+      <a
+        href={`/reports/${existingSlug}`}
+        onClick={(e) => { e.preventDefault(); navigate(`/reports/${existingSlug}`); }}
+        className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-all hover:bg-emerald-100"
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+        </svg>
+        View report
+      </a>
+    );
+  }
 
   async function handleResearch() {
     setLoading(true);
     setError("");
     try {
-      const { report } = await api.reports.generate(companyName);
+      const { report } = await api.reports.generate(companyName, false, country, city);
+      onGenerated?.(report.companySlug);
       navigate(`/reports/${report.companySlug}`);
     } catch (err: any) {
       setError(err.message ?? "Failed");
@@ -293,6 +324,21 @@ export function CitySearch() {
   const [error, setError] = useState("");
   const [moreError, setMoreError] = useState("");
   const [result, setResult] = useState<CitySearchResult | null>(null);
+  const [existingReports, setExistingReports] = useState<Record<string, string>>({}); // slug → companySlug
+
+  // Fetch all existing reports once so we can show "View report" instead of "Research"
+  useEffect(() => {
+    api.reports.list().then((all: any[]) => {
+      const map: Record<string, string> = {};
+      all.forEach((r) => { map[r.companySlug] = r.companySlug; });
+      setExistingReports(map);
+    }).catch(() => {/* non-fatal */});
+  }, []);
+
+  // After generating a new report, add it to the existing set so the button flips immediately
+  function markReportExists(companySlug: string) {
+    setExistingReports((prev) => ({ ...prev, [companySlug]: companySlug }));
+  }
   const [sortCol, setSortCol] = useState<SortCol>("revenue");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -558,7 +604,13 @@ export function CitySearch() {
                       <TickerBadge ticker={co.ticker} isPrivate={co.isPrivate} />
                     </td>
                     <td className="px-4 py-3.5">
-                      <ResearchButton companyName={co.name} />
+                      <ResearchButton
+                        companyName={co.name}
+                        country={country}
+                        city={city}
+                        existingSlug={existingReports[slugify(co.name)]}
+                        onGenerated={markReportExists}
+                      />
                     </td>
                   </tr>
                 ))}

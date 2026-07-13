@@ -48,10 +48,10 @@ export const api = {
   reports: {
     list: () => request<any[]>("/reports"),
     get: (slug: string) => request<any>(`/reports/${slug}`),
-    generate: (companyName: string, forceRefresh = false) =>
+    generate: (companyName: string, forceRefresh = false, country?: string, city?: string) =>
       request<any>("/reports/generate", {
         method: "POST",
-        body: JSON.stringify({ companyName, forceRefresh }),
+        body: JSON.stringify({ companyName, forceRefresh, country, city }),
       }),
     delete: (id: number) =>
       request<any>(`/reports/${id}`, { method: "DELETE" }),

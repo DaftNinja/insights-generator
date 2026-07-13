@@ -48,12 +48,14 @@ router.post("/reports/generate", async (req: any, res) => {
   const schema = z.object({
     companyName: z.string().min(1).max(200),
     forceRefresh: z.boolean().optional().default(false),
+    country: z.string().max(100).optional(),
+    city: z.string().max(100).optional(),
   });
 
   const parse = schema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: parse.error.message });
 
-  const { companyName, forceRefresh } = parse.data;
+  const { companyName, forceRefresh, country, city } = parse.data;
   const slug = slugify(companyName);
 
   try {
@@ -61,6 +63,10 @@ router.post("/reports/generate", async (req: any, res) => {
     if (!forceRefresh) {
       const existing = await getReportBySlug(slug);
       if (existing && (await isCacheValid(existing))) {
+        // Backfill country/city if the cached report doesn't have them yet
+        if ((country || city) && (!existing.country || !existing.city)) {
+          await createOrUpdateReport({ companyName, country, city });
+        }
         const { id: cacheUserId, email: cacheEmail } = getSessionUser(req);
         await writeAuditLog("REPORT_CACHE_HIT", companyName, cacheUserId, cacheEmail, getClientIp(req));
         return res.json({ report: existing, cached: true });
@@ -87,7 +93,7 @@ router.post("/reports/generate", async (req: any, res) => {
     if (!reportData) throw lastError;
 
     const industry = (reportData as { industry?: string }).industry ?? "Unknown";
-    const saved = await createOrUpdateReport({ companyName, industry, reportData, isGenerating: false });
+    const saved = await createOrUpdateReport({ companyName, industry, reportData, isGenerating: false, country, city });
 
     const { id: genUserId, email: genEmail } = getSessionUser(req);
     await writeAuditLog("REPORT_GENERATED", companyName, genUserId, genEmail, getClientIp(req));

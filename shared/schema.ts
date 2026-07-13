@@ -42,6 +42,8 @@ export const reports = pgTable("reports", {
   companyName: text("company_name").notNull(),
   companySlug: text("company_slug").notNull().unique(),
   industry: text("industry"),
+  country: text("country"),
+  city: text("city"),
   reportData: jsonb("report_data"),
   salesEnablementData: jsonb("sales_enablement_data"),
   generatedAt: timestamp("generated_at").defaultNow(),

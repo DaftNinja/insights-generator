@@ -360,9 +360,11 @@ For stock tickers, use the format "EXCHANGE: TICKER" (e.g. "NYSE: AAPL", "LSE: H
     messages: [
       {
         role: "user",
-        content: `Search for significant companies located in or near ${city}, ${country}. Include companies headquartered there and major offices/regional HQs.${contextClause}${excludeClause}
+        content: `Search for significant companies located in or near ${city}, ${country}. Cast a wide net — include companies headquartered there, major regional offices, large employers, and well-known local businesses. For smaller cities include companies in the surrounding region up to 100km away.${contextClause}${excludeClause}
 
-Find up to ${limit} real, verifiable companies. For each company:
+Return as many real, verifiable companies as you can find — aim for up to ${limit} but return fewer if that is all you can verify. ALWAYS return the JSON structure below even if the companies array has only a few entries. Do NOT return an explanation or note instead of the JSON.
+
+For each company:
 - Name: official company name
 - URL: main website (https://...)
 - Distance from ${city} city centre in km (approximate)
@@ -374,9 +376,8 @@ Find up to ${limit} real, verifiable companies. For each company:
 Distance band rules:
 - "core" = within 20km (very favourable — search here first)
 - "good" = 21–50km (good candidates)
-- "optional" = 51–100km (borderline — include if no better options fill the list)
+- "optional" = 51–100km (borderline)
 
-Prioritise companies actually headquartered in or closest to ${city}. Only include companies within 100km.
 Sort results by distanceKm ascending.
 
 Return ONLY this JSON:
@@ -417,8 +418,13 @@ Return ONLY this JSON:
 
   try {
     const parsed = JSON.parse(cleaned) as CitySearchResult;
+    // Model sometimes returns an explanation object instead of the companies schema
+    if (!Array.isArray(parsed.companies)) {
+      console.warn("City search: response lacked companies array — returning empty result. Raw:", cleaned.slice(0, 300));
+      return { city, country, companies: [] };
+    }
     // Normalise each company to guarantee required fields
-    parsed.companies = (parsed.companies ?? []).map((c) => ({
+    parsed.companies = parsed.companies.map((c) => ({
       name: c.name ?? "Unknown",
       url: c.url ?? "",
       distanceKm: typeof c.distanceKm === "number" ? c.distanceKm : 0,
