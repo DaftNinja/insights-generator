@@ -108,10 +108,10 @@ Return ONLY this JSON:
     "lastUpdated": "Today dd/mm/yyyy"
   },
   "financials": {
-    "revenue": "e.g. $391.0B",
+    "revenue": "e.g. $391.0B — for banks/financial institutions use Net Banking Income (NBI) as the primary revenue metric and label it, e.g. '€395.7M (NBI)'",
     "revenueGrowth": "e.g. +8.1% YoY",
     "netIncome": "e.g. $93.7B",
-    "ebitda": "e.g. $125.8B",
+    "ebitda": "e.g. $125.8B — for banks use operating profit or pre-tax profit instead if EBITDA is not reported",
     "marketCap": "e.g. $3.4T",
     "stockTicker": "e.g. AAPL",
     "stockPrice": "e.g. $225.00",
@@ -123,7 +123,7 @@ Return ONLY this JSON:
       {"label": "EPS", "value": "$6.11", "trend": "up"}
     ],
     "revenueHistory": [
-      {"year": "2021", "revenue": "$X.XB", "growth": "+X%"},
+      {"year": "2021", "revenue": "$X.XB or €X.XM (NBI) for banks", "growth": "+X%"},
       {"year": "2022", "revenue": "$X.XB", "growth": "+X%"},
       {"year": "2023", "revenue": "$X.XB", "growth": "+X%"},
       {"year": "2024", "revenue": "$X.XB", "growth": "+X%"}
