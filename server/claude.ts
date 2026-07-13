@@ -394,14 +394,20 @@ Return ONLY this JSON:
     ],
   });
 
-  const text = message.content
+  const rawText = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("")
     .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/g, "$1")
     .trim();
 
-  const cleaned = text.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
+  // Model sometimes narrates before emitting JSON — slice from the first `{`
+  const jsonStart = rawText.indexOf("{");
+  if (jsonStart === -1) {
+    console.error("City search: no JSON object in response. Raw:", rawText.slice(0, 500));
+    throw new Error("Failed to parse city search response. Please try again.");
+  }
+  const cleaned = rawText.slice(jsonStart).replace(/\n?```$/, "").trim();
 
   try {
     const parsed = JSON.parse(cleaned) as CitySearchResult;
