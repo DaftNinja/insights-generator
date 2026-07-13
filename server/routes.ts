@@ -4,7 +4,7 @@ import {
   getAllReports, getReportBySlug, createOrUpdateReport,
   updateSalesEnablement, deleteReport, isCacheValid, slugify,
 } from "./storage.js";
-import { generateReport, generateSalesEnablement, generateInvestorPresentation } from "./claude.js";
+import { generateReport, generateSalesEnablement, generateInvestorPresentation, generateCitySearch } from "./claude.js";
 import { writeAuditLog } from "./auth.js";
 
 export const router = Router();
@@ -185,4 +185,29 @@ router.post("/reports/batch", async (req, res) => {
   }
 
   res.json({ results });
+});
+
+// ─── City Company Search ──────────────────────────────────────────────────────
+
+router.post("/city-search", async (req, res) => {
+  const schema = z.object({
+    country: z.string().min(1).max(100),
+    city: z.string().min(1).max(100),
+    context: z.string().max(500).optional(),
+  });
+
+  const parse = schema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: parse.error.message });
+
+  const { country, city, context } = parse.data;
+
+  try {
+    const result = await generateCitySearch(country, city, context);
+    const { id: userId, email } = getSessionUser(req);
+    await writeAuditLog("CITY_SEARCH", `${city}, ${country}`, userId, email, getClientIp(req));
+    res.json(result);
+  } catch (err) {
+    console.error("POST /city-search error:", err);
+    res.status(500).json({ error: "City search failed. Please try again." });
+  }
 });

@@ -68,4 +68,9 @@ export const api = {
         body: JSON.stringify({ companies }),
       }),
   },
+  citySearch: (country: string, city: string, context?: string) =>
+    request<any>("/city-search", {
+      method: "POST",
+      body: JSON.stringify({ country, city, context }),
+    }),
 };

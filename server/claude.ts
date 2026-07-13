@@ -313,6 +313,118 @@ Return ONLY this JSON:
   return callClaude(prompt, 4000);
 }
 
+// ─── City Company Search ──────────────────────────────────────────────────────
+
+export interface CityCompany {
+  name: string;
+  url: string;
+  distanceKm: number;
+  distanceBand: "core" | "good" | "optional";
+  revenue: string;
+  isPrivate: boolean;
+  ticker: string; // "Private" if unlisted, else e.g. "NYSE: AAPL"
+  description: string;
+}
+
+export interface CitySearchResult {
+  city: string;
+  country: string;
+  companies: CityCompany[];
+}
+
+export async function generateCitySearch(
+  country: string,
+  city: string,
+  context?: string
+): Promise<CitySearchResult> {
+  const contextClause = context?.trim()
+    ? `\n\nAdditional search context (use this to refine which companies are most relevant): ${context.trim()}`
+    : "";
+
+  const message = await client.messages.create({
+    model: MODEL_GROUNDED,
+    max_tokens: 4000,
+    system: `You are a company research analyst. Search the web to find accurate, real companies.
+Respond with ONLY valid JSON — no prose, no markdown fences, no explanation.
+Do NOT invent companies. Only include companies you can verify exist.
+All revenue figures should be the most recent publicly available annual revenue.
+For private companies that do not disclose revenue, use "Undisclosed".
+For stock tickers, use the format "EXCHANGE: TICKER" (e.g. "NYSE: AAPL", "LSE: HSBA", "NASDAQ: MSFT"). Use "Private" if the company is not publicly listed.`,
+    tools: [{ type: "web_search_20250305" as const, name: "web_search" }],
+    messages: [
+      {
+        role: "user",
+        content: `Search for significant companies located in or near ${city}, ${country}. Include companies headquartered there and major offices/regional HQs.${contextClause}
+
+Find up to 20 real, verifiable companies. For each company:
+- Name: official company name
+- URL: main website (https://...)
+- Distance from ${city} city centre in km (approximate)
+- Revenue: most recent annual revenue (e.g. "$2.3B", "£450M") — use "Undisclosed" for private companies that don't publish revenue
+- isPrivate: true if not publicly listed on any stock exchange
+- Ticker: stock exchange and ticker symbol (e.g. "NYSE: AAPL", "LSE: HSBA") — use "Private" if not listed
+- Description: one sentence about what the company does
+
+Distance band rules:
+- "core" = within 20km (very favourable — search here first)
+- "good" = 21–50km (good candidates)
+- "optional" = 51–100km (borderline — include if no better options fill the list)
+
+Prioritise companies actually headquartered in or closest to ${city}. Only include companies within 100km.
+Sort results by distanceKm ascending.
+
+Return ONLY this JSON:
+{
+  "city": "${city}",
+  "country": "${country}",
+  "companies": [
+    {
+      "name": "Company Name",
+      "url": "https://example.com",
+      "distanceKm": 2,
+      "distanceBand": "core",
+      "revenue": "$5.2B",
+      "isPrivate": false,
+      "ticker": "NYSE: EX",
+      "description": "One sentence description of what the company does."
+    }
+  ]
+}`,
+      },
+    ],
+  });
+
+  const text = message.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/g, "$1")
+    .trim();
+
+  const cleaned = text.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
+
+  try {
+    const parsed = JSON.parse(cleaned) as CitySearchResult;
+    // Normalise each company to guarantee required fields
+    parsed.companies = (parsed.companies ?? []).map((c) => ({
+      name: c.name ?? "Unknown",
+      url: c.url ?? "",
+      distanceKm: typeof c.distanceKm === "number" ? c.distanceKm : 0,
+      distanceBand: (["core", "good", "optional"] as const).includes(c.distanceBand)
+        ? c.distanceBand
+        : "core",
+      revenue: c.revenue ?? "Undisclosed",
+      isPrivate: Boolean(c.isPrivate),
+      ticker: c.ticker ?? "Private",
+      description: c.description ?? "",
+    }));
+    return parsed;
+  } catch {
+    console.error("City search JSON parse failed. Raw:", cleaned.slice(0, 500));
+    throw new Error("Failed to parse city search response. Please try again.");
+  }
+}
+
 // ─── Investor Presentation ────────────────────────────────────────────────────
 
 export async function generateInvestorPresentation(

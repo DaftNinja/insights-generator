@@ -5,6 +5,7 @@ import { Dashboard } from "@/pages/Dashboard";
 import { Mission } from "@/pages/Mission";
 import { Presentation } from "@/pages/Presentation";
 import { Batch } from "@/pages/Batch";
+import { CitySearch } from "@/pages/CitySearch";
 import { Demo } from "@/pages/Demo";
 import { AuditLog } from "@/pages/AuditLog";
 import { Login } from "@/pages/Login";
@@ -43,6 +44,7 @@ export default function App() {
       <Route path="/mission" component={gated(Mission)} />
       <Route path="/presentation" component={gated(Presentation)} />
       <Route path="/batch" component={gated(Batch)} />
+      <Route path="/city-search" component={gated(CitySearch)} />
       <Route path="/audit-log" component={gated(AuditLog, { admin: true })} />
 
       <Route component={NotFound} />
