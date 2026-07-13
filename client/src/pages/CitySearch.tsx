@@ -124,6 +124,80 @@ function Combobox({ value, onChange, options, placeholder, disabled, id }: Combo
   );
 }
 
+// ─── Sorting helpers ──────────────────────────────────────────────────────────
+
+type SortCol = "name" | "distance" | "revenue" | "ticker";
+type SortDir = "asc" | "desc";
+
+function parseRevenue(revenue: string): number {
+  if (!revenue || revenue === "Undisclosed" || revenue === "N/A" || revenue === "Private") return -1;
+  const cleaned = revenue.replace(/[£€$¥₹,\s]/g, "").toUpperCase();
+  const match = cleaned.match(/^([\d.]+)([BMK]?)$/);
+  if (!match) return -1;
+  const num = parseFloat(match[1]);
+  const mult = match[2] === "B" ? 1e9 : match[2] === "M" ? 1e6 : match[2] === "K" ? 1e3 : 1;
+  return num * mult;
+}
+
+function applySortedCompanies(companies: CityCompany[], col: SortCol, dir: SortDir): CityCompany[] {
+  return [...companies].sort((a, b) => {
+    let cmp = 0;
+    if (col === "name") {
+      cmp = a.name.localeCompare(b.name);
+    } else if (col === "distance") {
+      cmp = a.distanceKm - b.distanceKm;
+    } else if (col === "revenue") {
+      const ra = parseRevenue(a.revenue);
+      const rb = parseRevenue(b.revenue);
+      if (ra === -1 && rb === -1) cmp = 0;
+      else if (ra === -1) cmp = 1;   // undisclosed always last
+      else if (rb === -1) cmp = -1;
+      else cmp = ra - rb;
+    } else if (col === "ticker") {
+      const ta = a.isPrivate ? "zzz" : a.ticker;
+      const tb = b.isPrivate ? "zzz" : b.ticker;
+      cmp = ta.localeCompare(tb);
+    }
+    return dir === "asc" ? cmp : -cmp;
+  });
+}
+
+// ─── Sort header component ────────────────────────────────────────────────────
+
+function SortHeader({
+  col, label, active, dir, onSort,
+}: {
+  col: SortCol; label: string; active: boolean; dir: SortDir; onSort: (col: SortCol) => void;
+}) {
+  return (
+    <th
+      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] cursor-pointer select-none hover:text-[var(--text-primary)] transition-colors"
+      onClick={() => onSort(col)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className="inline-flex flex-col gap-px leading-none">
+          {active ? (
+            dir === "asc" ? (
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" className="text-[var(--primary)]">
+                <path d="M4 1l3.5 5H.5z" />
+              </svg>
+            ) : (
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" className="text-[var(--primary)]">
+                <path d="M4 7L.5 2h7z" />
+              </svg>
+            )
+          ) : (
+            <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="text-[var(--text-muted)] opacity-40">
+              <path d="M4 0l3 4H1z M4 10L1 6h6z" />
+            </svg>
+          )}
+        </span>
+      </span>
+    </th>
+  );
+}
+
 // ─── Distance Band UI helpers ─────────────────────────────────────────────────
 
 const BAND_CONFIG = {
@@ -217,6 +291,18 @@ export function CitySearch() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<CitySearchResult | null>(null);
+  const [sortCol, setSortCol] = useState<SortCol>("revenue");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  function handleSort(col: SortCol) {
+    if (col === sortCol) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      // Sensible defaults per column
+      setSortDir(col === "revenue" ? "desc" : col === "distance" ? "asc" : "asc");
+    }
+  }
 
   // Reset city when country changes
   const handleCountryChange = useCallback((val: string) => {
@@ -248,6 +334,8 @@ export function CitySearch() {
       setLoading(false);
     }
   }
+
+  const sortedCompanies = result ? applySortedCompanies(result.companies, sortCol, sortDir) : [];
 
   // Group results by band for the legend
   const coreCo    = result?.companies.filter((c) => c.distanceBand === "core")     ?? [];
@@ -398,15 +486,15 @@ export function CitySearch() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] bg-[var(--bg-secondary)]">
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Company</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Distance</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Revenue</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Ticker</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]"></th>
+                  <SortHeader col="name"     label="Company"  active={sortCol === "name"}     dir={sortDir} onSort={handleSort} />
+                  <SortHeader col="distance" label="Distance" active={sortCol === "distance"} dir={sortDir} onSort={handleSort} />
+                  <SortHeader col="revenue"  label="Revenue"  active={sortCol === "revenue"}  dir={sortDir} onSort={handleSort} />
+                  <SortHeader col="ticker"   label="Ticker"   active={sortCol === "ticker"}   dir={sortDir} onSort={handleSort} />
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border)]">
-                {result.companies.map((co, i) => (
+                {sortedCompanies.map((co, i) => (
                   <tr
                     key={`${co.name}-${i}`}
                     className="transition-colors hover:bg-[var(--bg-secondary)]"
@@ -451,7 +539,7 @@ export function CitySearch() {
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-3">
-            {result.companies.map((co, i) => (
+            {sortedCompanies.map((co, i) => (
               <div key={`${co.name}-${i}`} className="card p-4">
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div>
