@@ -194,15 +194,17 @@ router.post("/city-search", async (req, res) => {
     country: z.string().min(1).max(100),
     city: z.string().min(1).max(100),
     context: z.string().max(500).optional(),
+    excludeNames: z.array(z.string()).max(100).optional().default([]),
+    limit: z.number().int().min(1).max(20).optional().default(20),
   });
 
   const parse = schema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: parse.error.message });
 
-  const { country, city, context } = parse.data;
+  const { country, city, context, excludeNames, limit } = parse.data;
 
   try {
-    const result = await generateCitySearch(country, city, context);
+    const result = await generateCitySearch(country, city, context, excludeNames, limit);
     const { id: userId, email } = getSessionUser(req);
     await writeAuditLog("CITY_SEARCH", `${city}, ${country}`, userId, email, getClientIp(req));
     res.json(result);

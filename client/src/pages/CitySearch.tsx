@@ -289,7 +289,9 @@ export function CitySearch() {
   const [city, setCity] = useState("");
   const [context, setContext] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
+  const [moreError, setMoreError] = useState("");
   const [result, setResult] = useState<CitySearchResult | null>(null);
   const [sortCol, setSortCol] = useState<SortCol>("revenue");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -324,6 +326,7 @@ export function CitySearch() {
     if (!canSearch) return;
     setLoading(true);
     setError("");
+    setMoreError("");
     setResult(null);
     try {
       const data = await api.citySearch(country.trim(), city.trim(), context.trim() || undefined);
@@ -332,6 +335,32 @@ export function CitySearch() {
       setError(err.message ?? "Search failed. Please try again.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleLoadMore() {
+    if (!result) return;
+    setLoadingMore(true);
+    setMoreError("");
+    try {
+      const existing = result.companies.map((c) => c.name);
+      const data = await api.citySearch(
+        country.trim(), city.trim(),
+        context.trim() || undefined,
+        existing,
+        10
+      );
+      // Merge, deduplicating by name just in case
+      const existingNames = new Set(existing);
+      const fresh = data.companies.filter((c: CityCompany) => !existingNames.has(c.name));
+      setResult((prev) => prev
+        ? { ...prev, companies: [...prev.companies, ...fresh] }
+        : data
+      );
+    } catch (err: any) {
+      setMoreError(err.message ?? "Failed to load more. Please try again.");
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -588,6 +617,35 @@ export function CitySearch() {
                 <strong>50–100 km</strong> — optional
               </span>
             </div>
+          </div>
+
+          {/* Find more */}
+          <div className="flex flex-col items-center gap-2">
+            <button
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-5 py-2.5 text-sm font-medium text-[var(--text-secondary)] shadow-sm transition-all hover:border-[var(--primary)] hover:text-[var(--primary)] hover:shadow disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {loadingMore ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Finding more companies…
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                  </svg>
+                  Find 10 more
+                </>
+              )}
+            </button>
+            {moreError && (
+              <p className="text-xs text-red-500">{moreError}</p>
+            )}
           </div>
         </div>
       )}

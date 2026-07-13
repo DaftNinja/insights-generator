@@ -335,10 +335,16 @@ export interface CitySearchResult {
 export async function generateCitySearch(
   country: string,
   city: string,
-  context?: string
+  context?: string,
+  excludeNames: string[] = [],
+  limit = 20
 ): Promise<CitySearchResult> {
   const contextClause = context?.trim()
     ? `\n\nAdditional search context (use this to refine which companies are most relevant): ${context.trim()}`
+    : "";
+
+  const excludeClause = excludeNames.length > 0
+    ? `\n\nDo NOT include any of these companies (already shown): ${excludeNames.map(n => `"${n}"`).join(", ")}.`
     : "";
 
   const message = await client.messages.create({
@@ -354,9 +360,9 @@ For stock tickers, use the format "EXCHANGE: TICKER" (e.g. "NYSE: AAPL", "LSE: H
     messages: [
       {
         role: "user",
-        content: `Search for significant companies located in or near ${city}, ${country}. Include companies headquartered there and major offices/regional HQs.${contextClause}
+        content: `Search for significant companies located in or near ${city}, ${country}. Include companies headquartered there and major offices/regional HQs.${contextClause}${excludeClause}
 
-Find up to 20 real, verifiable companies. For each company:
+Find up to ${limit} real, verifiable companies. For each company:
 - Name: official company name
 - URL: main website (https://...)
 - Distance from ${city} city centre in km (approximate)
