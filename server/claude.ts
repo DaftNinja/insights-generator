@@ -368,7 +368,7 @@ For each company:
 - Name: official company name
 - URL: main website (https://...)
 - Distance from ${city} city centre in km (approximate)
-- Revenue: most recent annual revenue (e.g. "$2.3B", "£450M") — use "Undisclosed" for private companies that don't publish revenue
+- Revenue: most recent annual revenue (e.g. "$2.3B", "£450M"). For banks and financial institutions where total revenue is undisclosed, use Net Banking Income instead and label it clearly (e.g. "€300M (NBI)"). For all other companies where revenue is genuinely undisclosed, use "Undisclosed"
 - isPrivate: true if not publicly listed on any stock exchange
 - Ticker: stock exchange and ticker symbol (e.g. "NYSE: AAPL", "LSE: HSBA") — use "Private" if not listed
 - Description: one sentence about what the company does
