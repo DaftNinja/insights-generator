@@ -240,11 +240,12 @@ function slugify(name: string): string {
 // ─── Research / View report button (per row) ──────────────────────────────────
 
 function ResearchButton({
-  companyName, country, city, existingSlug, onGenerated,
+  companyName, country, city, revenue, existingSlug, onGenerated,
 }: {
   companyName: string;
   country: string;
   city: string;
+  revenue?: string;
   existingSlug?: string;
   onGenerated?: (slug: string) => void;
 }) {
@@ -272,7 +273,7 @@ function ResearchButton({
     setLoading(true);
     setError("");
     try {
-      const { report } = await api.reports.generate(companyName, false, country, city);
+      const { report } = await api.reports.generate(companyName, false, country, city, revenue);
       onGenerated?.(report.companySlug);
       navigate(`/reports/${report.companySlug}`);
     } catch (err: any) {
@@ -608,6 +609,7 @@ export function CitySearch() {
                         companyName={co.name}
                         country={country}
                         city={city}
+                        revenue={co.revenue}
                         existingSlug={existingReports[slugify(co.name)]}
                         onGenerated={markReportExists}
                       />
@@ -646,7 +648,14 @@ export function CitySearch() {
                     <span className="text-xs text-[var(--text-secondary)]">{co.revenue}</span>
                     <TickerBadge ticker={co.ticker} isPrivate={co.isPrivate} />
                   </div>
-                  <ResearchButton companyName={co.name} />
+                  <ResearchButton
+                    companyName={co.name}
+                    country={country}
+                    city={city}
+                    revenue={co.revenue}
+                    existingSlug={existingReports[slugify(co.name)]}
+                    onGenerated={markReportExists}
+                  />
                 </div>
               </div>
             ))}

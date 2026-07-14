@@ -50,12 +50,13 @@ router.post("/reports/generate", async (req: any, res) => {
     forceRefresh: z.boolean().optional().default(false),
     country: z.string().max(100).optional(),
     city: z.string().max(100).optional(),
+    knownRevenue: z.string().max(50).optional(),
   });
 
   const parse = schema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: parse.error.message });
 
-  const { companyName, forceRefresh, country, city } = parse.data;
+  const { companyName, forceRefresh, country, city, knownRevenue } = parse.data;
   const slug = slugify(companyName);
 
   try {
@@ -78,7 +79,7 @@ router.post("/reports/generate", async (req: any, res) => {
     let lastError: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        reportData = await generateReport(companyName);
+        reportData = await generateReport(companyName, knownRevenue);
         break;
       } catch (err: any) {
         lastError = err;

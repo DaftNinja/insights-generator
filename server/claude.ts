@@ -82,11 +82,15 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
 
 // ─── Report Part A: overview + financials + strategy + market ─────────────────
 
-async function generatePartA(companyName: string): Promise<unknown> {
+async function generatePartA(companyName: string, knownRevenue?: string): Promise<unknown> {
   // Resolve CEO via a tiny targeted web search (low token cost) before the main call
   const currentCEO = await lookupCEO(companyName);
 
-  const prompt = `Generate strategic intelligence PART A for: ${companyName}
+  const revenueHint = knownRevenue
+    ? `\nIMPORTANT: The verified revenue for ${companyName} is "${knownRevenue}" — use this exact value in the financials.revenue field and as the most recent year in revenueHistory. Do NOT override it with an estimate.`
+    : "";
+
+  const prompt = `Generate strategic intelligence PART A for: ${companyName}${revenueHint}
 
 The current CEO is: ${currentCEO} — use this exact name in the executiveSummary.ceo field. Do NOT include the CEO again in keyExecutives.
 For keyExecutives: include between 3 and 8 other senior leaders you are certain exist (CFO, COO, CTO, division presidents, etc). STRICT RULES: real verified names only — if uncertain about a person, omit them entirely. Never invent, guess, or recombine names. Quality over quantity — 4 accurate entries is better than 8 with errors.
@@ -157,6 +161,7 @@ Return ONLY this JSON:
 
   return callClaude(prompt, 5000); // ← fast Haiku; CEO already resolved via lookupCEO()
 }
+
 
 // ─── Report Part B: tech + ESG + SWOT + growth + risk + digital ──────────────
 
@@ -252,12 +257,12 @@ Return ONLY this JSON:
 
 // ─── Public: generate full report (parallel) ──────────────────────────────────
 
-export async function generateReport(companyName: string): Promise<unknown> {
+export async function generateReport(companyName: string, knownRevenue?: string): Promise<unknown> {
   const start = Date.now();
 
   // Sequential — parallel calls compete for the 30k input token/min bucket and rate-limit.
   // Small time cost (~5-10s extra) but reliable on build-tier API limits.
-  const partA = await generatePartA(companyName);
+  const partA = await generatePartA(companyName, knownRevenue);
   const partB = await generatePartB(companyName);
 
   console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (CEO lookup + Haiku x2)`);
