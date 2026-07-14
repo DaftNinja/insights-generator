@@ -4,24 +4,27 @@
 
 @layer base {
   :root {
-    --bg-primary: hsl(210, 40%, 98%);
-    --bg-secondary: hsl(210, 40%, 96.1%);
-    --bg-card: hsl(0, 0%, 100%);
-    --bg-card-hover: hsl(210, 40%, 97%);
-    --border: hsl(214.3, 31.8%, 91.4%);
-    --border-light: hsl(214.3, 31.8%, 85%);
-    --primary: hsl(221, 83%, 53%);
-    --primary-hover: hsl(221, 83%, 46%);
-    --primary-light: hsl(221, 83%, 96%);
-    --primary-dim: hsl(221, 83%, 90%);
-    --text-primary: hsl(222, 47%, 11%);
-    --text-secondary: hsl(215.4, 16.3%, 46.9%);
-    --text-muted: hsl(215, 16%, 65%);
-    --destructive: hsl(0, 84.2%, 60.2%);
-    --success: hsl(142, 71%, 45%);
-    --amber: hsl(38, 92%, 50%);
-    --violet: hsl(262, 83%, 58%);
-    --radius: 0.5rem;
+    /* ── Maudslay Consulting palette ── */
+    --bg-primary: #F5F4F1;
+    --bg-secondary: #EDECEA;
+    --bg-card: #FFFFFF;
+    --bg-card-hover: #F9F8F6;
+    --border: #DDD9D2;
+    --border-light: #CBC6BE;
+    --primary: #1C2B5C;
+    --primary-hover: #152248;
+    --primary-light: #EEF0F7;
+    --primary-dim: #D4D8EA;
+    --text-primary: #1A1F35;
+    --text-secondary: #4C5169;
+    --text-muted: #8A8D9A;
+    --gold: #B8965A;
+    --gold-light: #F5EFE4;
+    --destructive: hsl(0, 72%, 51%);
+    --success: hsl(152, 60%, 40%);
+    --amber: hsl(38, 80%, 48%);
+    --violet: hsl(258, 70%, 52%);
+    --radius: 0.375rem;
   }
 
   * {
@@ -46,8 +49,13 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: "Inter", sans-serif;
+    font-family: "Cormorant Garamond", Georgia, serif;
     font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .font-display {
+    font-family: "Cormorant Garamond", Georgia, serif;
   }
 
   code, pre, .font-mono {
@@ -55,8 +63,8 @@
   }
 
   ::selection {
-    background: hsl(221, 83%, 90%);
-    color: hsl(222, 47%, 11%);
+    background: var(--primary-dim);
+    color: var(--primary);
   }
 
   ::-webkit-scrollbar {
@@ -74,45 +82,45 @@
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(221, 83%, 75%);
+    background: var(--primary-dim);
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-4 sm:p-6 shadow-sm;
+    @apply rounded-sm border border-[var(--border)] bg-[var(--bg-card)] p-4 sm:p-6 shadow-sm;
   }
 
   .card-hover {
-    @apply card transition-all duration-150 hover:border-[var(--border-light)] hover:shadow-md cursor-pointer;
+    @apply card transition-all duration-200 hover:border-[var(--primary-dim)] hover:shadow-md cursor-pointer;
   }
 
   .btn-primary {
-    @apply inline-flex items-center gap-2 rounded-md bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white transition-all duration-150 hover:bg-[var(--primary-hover)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center gap-2 rounded-sm bg-[var(--primary)] px-4 py-2 text-sm font-medium tracking-wide text-white transition-all duration-150 hover:bg-[var(--primary-hover)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center gap-2 rounded-md border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-[var(--text-primary)] transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:border-[var(--border-light)] disabled:opacity-50;
+    @apply inline-flex items-center gap-2 rounded-sm border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-[var(--text-primary)] transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:border-[var(--border-light)] disabled:opacity-50;
   }
 
   .btn-ghost {
-    @apply inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)];
+    @apply inline-flex items-center gap-2 rounded-sm px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition-all duration-150 hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)];
   }
 
   .badge {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center rounded-sm px-2.5 py-0.5 text-xs font-medium tracking-wide;
   }
 
   .badge-blue {
-    @apply badge bg-blue-50 text-blue-700 border border-blue-200;
+    @apply badge bg-[var(--primary-light)] text-[var(--primary)] border border-[var(--primary-dim)];
   }
 
   .badge-green {
-    @apply badge bg-green-50 text-green-700 border border-green-200;
+    @apply badge bg-emerald-50 text-emerald-800 border border-emerald-200;
   }
 
   .badge-amber {
-    @apply badge bg-amber-50 text-amber-700 border border-amber-200;
+    @apply badge bg-amber-50 text-amber-800 border border-amber-200;
   }
 
   .badge-red {
@@ -124,7 +132,14 @@
   }
 
   .badge-gray {
-    @apply badge bg-gray-100 text-gray-600 border border-gray-200;
+    @apply badge bg-[var(--bg-secondary)] text-[var(--text-secondary)] border border-[var(--border)];
+  }
+
+  .badge-gold {
+    @apply badge border;
+    background-color: var(--gold-light);
+    color: var(--gold);
+    border-color: #D4B07A;
   }
 
   .metric-card {
@@ -132,15 +147,18 @@
   }
 
   .metric-label {
-    @apply text-xs font-medium uppercase tracking-wider text-[var(--text-muted)];
+    @apply text-xs font-medium uppercase tracking-widest text-[var(--text-muted)];
+    font-family: "Inter", sans-serif;
   }
 
   .metric-value {
     @apply text-xl sm:text-2xl font-semibold text-[var(--text-primary)];
+    font-family: "Cormorant Garamond", Georgia, serif;
   }
 
   .section-title {
-    @apply text-xs font-semibold text-[var(--text-primary)] mb-3 sm:mb-4 uppercase tracking-wide;
+    @apply text-xs font-semibold text-[var(--text-secondary)] mb-3 sm:mb-4 uppercase tracking-widest;
+    font-family: "Inter", sans-serif;
   }
 
   .shimmer {
@@ -152,6 +170,13 @@
     );
     background-size: 200% 100%;
     animation: shimmer 1.8s linear infinite;
+  }
+
+  /* Gold rule divider */
+  .rule-gold {
+    border: none;
+    border-top: 1px solid var(--gold);
+    opacity: 0.35;
   }
 }
 

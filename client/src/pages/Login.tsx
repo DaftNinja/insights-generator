@@ -8,7 +8,7 @@ type Stage = "form" | "signup" | "sent";
 const ERROR_MESSAGES: Record<string, string> = {
   missing_token: "That link was missing a token. Request a new one below.",
   invalid_link: "That sign-in link is invalid or has expired. Request a new one below.",
-  account_disabled: "Your account has been deactivated. Contact contact@1giglabs.com.",
+  account_disabled: "Your account has been deactivated. Contact hello@maudslayConsulting.com.",
   session_failed: "Something went wrong while signing you in. Please try again.",
   server_error: "The sign-in service hit an error. Please request a new link.",
 };
@@ -82,15 +82,22 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center bg-[var(--bg-primary)] px-4 py-12">
       <div className="w-full max-w-md">
         <Link href="/">
-          <a className="mb-8 flex items-center justify-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--primary)] text-white">
-              <span className="text-sm font-bold">1GL</span>
+          <a className="mb-10 flex flex-col items-center justify-center gap-3">
+            <svg width="56" height="56" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="32" height="32" rx="4" fill="#1C2B5C" />
+              <text x="3" y="23" fontFamily="Georgia, serif" fontSize="19" fontWeight="700" fill="#FFFFFF">M</text>
+              <text x="17" y="25" fontFamily="Georgia, serif" fontSize="12" fontWeight="400" fill="#A0A8C4">C</text>
+            </svg>
+            <div className="text-center">
+              <div className="text-base font-semibold tracking-[0.15em] text-[var(--primary)] uppercase" style={{ fontFamily: "Georgia, serif" }}>
+                Maudslay
+              </div>
+              <div className="text-[10px] tracking-[0.25em] text-[var(--text-muted)] uppercase">Consulting</div>
             </div>
-            <span className="text-base font-semibold text-[var(--text-primary)]">1GigLabs</span>
           </a>
         </Link>
 
-        <div className="rounded-xl border border-[var(--border)] bg-white p-8 shadow-sm">
+        <div className="rounded-sm border border-[var(--border)] bg-white p-8 shadow-sm" style={{ borderTop: "2px solid #1C2B5C" }}>
           {stage === "sent" ? (
             <SentPanel email={email} onBack={() => { setStage("form"); setError(""); }} />
           ) : (
@@ -169,8 +176,8 @@ export function Login() {
                 </button>
               </form>
 
-              <p className="mt-6 text-center text-xs text-[var(--text-muted)]">
-                By signing in you agree to receive a one-time email from <span className="font-mono">contact@1giglabs.com</span>.
+              <p className="mt-6 text-center text-xs text-[var(--text-muted)] tracking-wide">
+                By signing in you agree to receive a one-time email from Maudslay Consulting.
               </p>
             </>
           )}
