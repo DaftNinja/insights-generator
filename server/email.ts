@@ -1,9 +1,8 @@
 import { Resend } from "resend";
 
-// Sender — default uses the verified contact@1giglabs.com address.
-// Override with RESEND_FROM if needed.
-const FROM = process.env.RESEND_FROM ?? "1GigLabs <contact@1giglabs.com>";
-const APP_URL = process.env.APP_URL ?? "https://insights-generator-production.up.railway.app";
+// Sender — override with RESEND_FROM env var if a custom domain is configured.
+const FROM = process.env.RESEND_FROM ?? "Maudslay Consulting <contact@1giglabs.com>";
+const APP_URL = process.env.APP_URL ?? "https://mc.1giglabs.com";
 
 function getResend(): Resend {
   const key = process.env.RESEND_API_KEY;
@@ -48,30 +47,45 @@ export async function sendMagicLinkEmail(
 
   await send({
     to: email,
-    subject: "Your 1GigLabs sign-in link",
+    subject: "Your Maudslay Consulting sign-in link",
     html: `
-      <div style="font-family: Inter, -apple-system, Segoe UI, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; background: #f8fafc;">
-        <div style="background: white; border-radius: 8px; padding: 32px; border: 1px solid #e2e8f0;">
-          <div style="margin-bottom: 24px;">
-            <div style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; background: #3b82f6; border-radius: 8px; margin-bottom: 16px;">
-              <span style="color: white; font-weight: 700; font-size: 13px;">1GL</span>
+      <div style="font-family: Inter, -apple-system, Segoe UI, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; background: #F5F4F1;">
+        <div style="background: white; border-radius: 2px; padding: 40px 32px; border: 1px solid #DDD9D2; border-top: 3px solid #1C2B5C;">
+
+          <!-- Logo mark -->
+          <div style="margin-bottom: 28px;">
+            <div style="display: inline-block; width: 44px; height: 44px; background: #1C2B5C; border-radius: 4px; text-align: center; line-height: 1; padding-top: 10px; margin-bottom: 14px;">
+              <span style="color: white; font-family: Georgia, serif; font-weight: 700; font-size: 18px;">M</span><span style="color: #A0A8C4; font-family: Georgia, serif; font-size: 11px;">C</span>
             </div>
-            <h1 style="margin: 0; font-size: 22px; font-weight: 600; color: #0f1729;">Sign in to 1GigLabs</h1>
+            <div>
+              <div style="font-family: Georgia, serif; font-size: 13px; font-weight: 600; letter-spacing: 0.18em; color: #1C2B5C; text-transform: uppercase;">Maudslay</div>
+              <div style="font-family: Inter, sans-serif; font-size: 9px; letter-spacing: 0.25em; color: #8A8D9A; text-transform: uppercase;">Consulting</div>
+            </div>
           </div>
-          <p style="color: #475569; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
-            Hi ${firstName}, click the button below to sign in to your <strong>1GigLabs Insight Generator</strong> account. This link can only be used once and expires in 15 minutes.
+
+          <h1 style="margin: 0 0 16px; font-family: Georgia, serif; font-size: 22px; font-weight: 600; color: #1A1F35; letter-spacing: -0.01em;">
+            Sign in to your account
+          </h1>
+          <p style="color: #4C5169; font-size: 15px; line-height: 1.65; margin: 0 0 28px;">
+            Hi ${firstName}, click the button below to sign in to your <strong style="color: #1A1F35;">Maudslay Consulting Intelligence Platform</strong> account. This link can only be used once and expires in 15 minutes.
           </p>
-          <a href="${link}" style="display: inline-block; background: #3b82f6; color: white; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 24px; border-radius: 6px; margin-bottom: 24px;">
+
+          <a href="${link}" style="display: inline-block; background: #1C2B5C; color: white; text-decoration: none; font-family: Inter, sans-serif; font-weight: 500; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; padding: 13px 28px; border-radius: 2px; margin-bottom: 28px;">
             Sign in
           </a>
-          <p style="color: #94a3b8; font-size: 13px; margin: 0 0 8px;">
+
+          <hr style="border: none; border-top: 1px solid #DDD9D2; margin: 0 0 20px;" />
+
+          <p style="color: #8A8D9A; font-size: 13px; margin: 0 0 8px; line-height: 1.5;">
             If you didn't request this, you can safely ignore this email.
           </p>
-          <p style="color: #cbd5e1; font-size: 12px; margin: 0; word-break: break-all;">
-            Or paste this URL into your browser: <span style="color: #3b82f6;">${link}</span>
+          <p style="color: #CBC6BE; font-size: 11px; margin: 0; word-break: break-all;">
+            Or paste this URL into your browser: <span style="color: #1C2B5C;">${link}</span>
           </p>
         </div>
-        <p style="text-align: center; color: #94a3b8; font-size: 12px; margin-top: 16px;">1GigLabs · contact@1giglabs.com</p>
+        <p style="text-align: center; color: #8A8D9A; font-size: 11px; letter-spacing: 0.08em; margin-top: 20px; text-transform: uppercase;">
+          Maudslay Consulting · Intelligence Platform
+        </p>
       </div>
     `,
   });
@@ -82,20 +96,22 @@ export async function sendMagicLinkEmail(
 export async function sendCreditLimitEmail(email: string, firstName: string): Promise<void> {
   await send({
     to: email,
-    subject: "You've used all your 1GigLabs report credits",
+    subject: "You've used all your Maudslay Consulting report credits",
     html: `
-      <div style="font-family: Inter, -apple-system, Segoe UI, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; background: #f8fafc;">
-        <div style="background: white; border-radius: 8px; padding: 32px; border: 1px solid #e2e8f0;">
-          <h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #0f1729;">Report credits used</h1>
-          <p style="color: #475569; font-size: 15px; line-height: 1.6; margin: 0 0 16px;">
+      <div style="font-family: Inter, -apple-system, Segoe UI, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; background: #F5F4F1;">
+        <div style="background: white; border-radius: 2px; padding: 40px 32px; border: 1px solid #DDD9D2; border-top: 3px solid #1C2B5C;">
+          <h1 style="margin: 0 0 16px; font-family: Georgia, serif; font-size: 22px; font-weight: 600; color: #1A1F35;">Report credits used</h1>
+          <p style="color: #4C5169; font-size: 15px; line-height: 1.65; margin: 0 0 16px;">
             Hi ${firstName}, you've used all 5 of your free report credits.
           </p>
-          <p style="color: #475569; font-size: 15px; line-height: 1.6; margin: 0 0 16px;">
-            To continue generating reports, email <a href="mailto:contact@1giglabs.com" style="color: #3b82f6;">contact@1giglabs.com</a> to request additional credits.
+          <p style="color: #4C5169; font-size: 15px; line-height: 1.65; margin: 0 0 16px;">
+            To continue generating reports, please contact your Maudslay Consulting account manager to request additional credits.
           </p>
-          <p style="color: #94a3b8; font-size: 13px;">Cached reports don't use credits.</p>
+          <p style="color: #8A8D9A; font-size: 13px;">Cached reports don't use credits.</p>
         </div>
-        <p style="text-align: center; color: #94a3b8; font-size: 12px; margin-top: 16px;">1GigLabs · contact@1giglabs.com</p>
+        <p style="text-align: center; color: #8A8D9A; font-size: 11px; letter-spacing: 0.08em; margin-top: 20px; text-transform: uppercase;">
+          Maudslay Consulting · Intelligence Platform
+        </p>
       </div>
     `,
   });
