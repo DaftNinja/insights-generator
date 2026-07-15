@@ -128,6 +128,8 @@ async function init() {
       updated_at TIMESTAMP DEFAULT NOW(), is_generating BOOLEAN DEFAULT FALSE
     )`);
     await db.execute(sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS user_id INTEGER`);
+    await db.execute(sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS country TEXT`);
+    await db.execute(sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS city TEXT`);
 
     console.log("✅ Database initialised");
   } catch (err) {
