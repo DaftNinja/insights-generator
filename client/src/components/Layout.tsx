@@ -21,21 +21,22 @@ export function Navbar() {
   const [location, setLocation] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [userOpen, setUserOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
+  const userRef = useRef<HTMLDivElement>(null);
   const { user, loading, logout } = useAuth();
 
-  useEffect(() => { setMenuOpen(false); setMoreOpen(false); }, [location]);
+  useEffect(() => { setMenuOpen(false); setMoreOpen(false); setUserOpen(false); }, [location]);
   useEffect(() => {
     document.body.style.overflow = menuOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [menuOpen]);
 
-  // Close "More" on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
-        setMoreOpen(false);
-      }
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+      if (userRef.current && !userRef.current.contains(e.target as Node)) setUserOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -129,24 +130,6 @@ export function Navbar() {
               )}
             </div>
 
-            {/* Audit Log — admin only */}
-            {user?.isAdmin && (
-              <Link href="/audit-log">
-                <a className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                  location.startsWith("/audit-log")
-                    ? "bg-amber-50 text-amber-700"
-                    : "text-amber-700 hover:bg-amber-50"
-                }`}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="16" y1="13" x2="8" y2="13" />
-                    <line x1="16" y1="17" x2="8" y2="17" />
-                  </svg>
-                  Audit Log
-                </a>
-              </Link>
-            )}
           </div>
 
           {/* Right side */}
@@ -159,22 +142,63 @@ export function Navbar() {
             {!loading && (
               <div className="hidden sm:flex items-center gap-2">
                 {user ? (
-                  <>
-                    <div className="flex flex-col items-end leading-tight">
-                      <span className="text-xs font-medium text-[var(--text-primary)]">
-                        {user.firstName} {user.lastName}
-                      </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">
-                        {user.isAdmin ? "Admin" : `${user.reportCredits} credit${user.reportCredits === 1 ? "" : "s"}`}
-                      </span>
-                    </div>
+                  /* ── User dropdown ── */
+                  <div ref={userRef} className="relative">
                     <button
-                      onClick={handleLogout}
-                      className="rounded-md border border-[var(--border)] bg-white px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] transition-colors"
+                      onClick={() => setUserOpen((o) => !o)}
+                      className="flex items-center gap-2 rounded-md px-2.5 py-1.5 hover:bg-[var(--bg-secondary)] transition-colors"
                     >
-                      Sign out
+                      <div className="flex flex-col items-end leading-tight">
+                        <span className="text-xs font-medium text-[var(--text-primary)]">
+                          {user.firstName} {user.lastName}
+                        </span>
+                        <span className="text-[10px] text-[var(--text-muted)]">
+                          {user.isAdmin ? "Admin" : `${user.reportCredits} credit${user.reportCredits === 1 ? "" : "s"}`}
+                        </span>
+                      </div>
+                      <svg
+                        width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                        className={`text-[var(--text-muted)] transition-transform duration-150 ${userOpen ? "rotate-180" : ""}`}
+                      >
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
                     </button>
-                  </>
+
+                    {userOpen && (
+                      <div className="absolute right-0 top-full mt-1.5 w-48 rounded-lg border border-[var(--border)] bg-white py-1 shadow-lg z-50">
+                        {user.isAdmin && (
+                          <Link href="/audit-log">
+                            <a className={`flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium transition-colors ${
+                              location.startsWith("/audit-log")
+                                ? "text-amber-700 bg-amber-50"
+                                : "text-amber-700 hover:bg-amber-50"
+                            }`}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                                <line x1="16" y1="13" x2="8" y2="13" />
+                                <line x1="16" y1="17" x2="8" y2="17" />
+                              </svg>
+                              Audit Log
+                            </a>
+                          </Link>
+                        )}
+                        <div className={user.isAdmin ? "border-t border-[var(--border)] mt-1 pt-1" : ""}>
+                          <button
+                            onClick={handleLogout}
+                            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] transition-colors"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                              <polyline points="16 17 21 12 16 7" />
+                              <line x1="21" y1="12" x2="9" y2="12" />
+                            </svg>
+                            Sign out
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <Link href="/login">
                     <a className="rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--primary-hover)] transition-colors">
