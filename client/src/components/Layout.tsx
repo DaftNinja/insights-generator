@@ -1,12 +1,17 @@
 import { Link, useLocation } from "wouter";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 
-const NAV_ITEMS = [
+// Primary nav — always visible
+const PRIMARY_NAV = [
   { href: "/", label: "Home" },
   { href: "/reports", label: "Reports" },
   { href: "/city-search", label: "City Search" },
   { href: "/demo", label: "Demo", highlight: true },
+];
+
+// Secondary nav — tucked into "More" dropdown
+const MORE_NAV = [
   { href: "/mission", label: "Mission" },
   { href: "/presentation", label: "Investor Deck" },
   { href: "/batch", label: "Batch Upload" },
@@ -15,51 +20,116 @@ const NAV_ITEMS = [
 export function Navbar() {
   const [location, setLocation] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
   const { user, loading, logout } = useAuth();
 
-  useEffect(() => { setMenuOpen(false); }, [location]);
+  useEffect(() => { setMenuOpen(false); setMoreOpen(false); }, [location]);
   useEffect(() => {
     document.body.style.overflow = menuOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [menuOpen]);
+
+  // Close "More" on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   async function handleLogout() {
     await logout();
     setLocation("/");
   }
 
+  const moreActive = MORE_NAV.some(({ href }) => location.startsWith(href));
+
   return (
     <>
       <nav className="sticky top-0 z-50 border-b border-[var(--border)] bg-white/95 backdrop-blur-md shadow-sm">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
+
           {/* Logo */}
           <Link href="/">
-            <a className="flex items-center gap-2.5 group">
+            <a className="flex items-center gap-2.5 group shrink-0">
               <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--primary)] text-white group-hover:bg-[var(--primary-hover)] transition-colors">
                 <span className="text-xs font-bold">1GL</span>
               </div>
               <span className="text-sm font-semibold text-[var(--text-primary)]">1GigLabs</span>
-              <span className="hidden text-xs text-[var(--text-muted)] sm:block">Insight Generator</span>
+              <span className="hidden text-xs text-[var(--text-muted)] lg:block">Insight Generator</span>
             </a>
           </Link>
 
           {/* Desktop nav */}
           <div className="hidden md:flex items-center gap-1">
-            {NAV_ITEMS.map(({ href, label, highlight }) => {
+
+            {/* Primary items */}
+            {PRIMARY_NAV.map(({ href, label, highlight }) => {
               const active = href === "/" ? location === "/" : location.startsWith(href);
               return (
                 <Link key={href} href={href}>
                   <a className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                    active ? "bg-[var(--primary-light)] text-[var(--primary)]"
-                    : highlight ? "bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)]"
-                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
+                    active
+                      ? "bg-[var(--primary-light)] text-[var(--primary)]"
+                      : highlight
+                      ? "bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)]"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
                   }`}>
-                    {highlight && <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,1 9,5 2,9" /></svg>}
+                    {highlight && (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                        <polygon points="2,1 9,5 2,9" />
+                      </svg>
+                    )}
                     {label}
                   </a>
                 </Link>
               );
             })}
+
+            {/* More dropdown */}
+            <div ref={moreRef} className="relative">
+              <button
+                onClick={() => setMoreOpen((o) => !o)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${
+                  moreActive
+                    ? "bg-[var(--primary-light)] text-[var(--primary)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
+                }`}
+              >
+                More
+                <svg
+                  width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                  className={`transition-transform duration-150 ${moreOpen ? "rotate-180" : ""}`}
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+
+              {moreOpen && (
+                <div className="absolute left-0 top-full mt-1.5 w-44 rounded-lg border border-[var(--border)] bg-white py-1 shadow-lg z-50">
+                  {MORE_NAV.map(({ href, label }) => {
+                    const active = location.startsWith(href);
+                    return (
+                      <Link key={href} href={href}>
+                        <a className={`flex items-center px-4 py-2.5 text-sm font-medium transition-colors ${
+                          active
+                            ? "text-[var(--primary)] bg-[var(--primary-light)]"
+                            : "text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
+                        }`}>
+                          {label}
+                        </a>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Audit Log — admin only */}
             {user?.isAdmin && (
               <Link href="/audit-log">
                 <a className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
@@ -69,7 +139,9 @@ export function Navbar() {
                 }`}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
                   </svg>
                   Audit Log
                 </a>
@@ -77,20 +149,21 @@ export function Navbar() {
             )}
           </div>
 
-          {/* Right */}
+          {/* Right side */}
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1">
               <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
               <span className="text-xs font-medium text-blue-700">AI Live</span>
             </div>
 
-            {/* Auth state */}
             {!loading && (
               <div className="hidden sm:flex items-center gap-2">
                 {user ? (
                   <>
                     <div className="flex flex-col items-end leading-tight">
-                      <span className="text-xs font-medium text-[var(--text-primary)]">{user.firstName} {user.lastName}</span>
+                      <span className="text-xs font-medium text-[var(--text-primary)]">
+                        {user.firstName} {user.lastName}
+                      </span>
                       <span className="text-[10px] text-[var(--text-muted)]">
                         {user.isAdmin ? "Admin" : `${user.reportCredits} credit${user.reportCredits === 1 ? "" : "s"}`}
                       </span>
@@ -127,21 +200,29 @@ export function Navbar() {
       </nav>
 
       {/* Mobile overlay */}
-      {menuOpen && <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setMenuOpen(false)} />}
+      {menuOpen && (
+        <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setMenuOpen(false)} />
+      )}
 
-      {/* Mobile menu */}
+      {/* Mobile menu — all items flat */}
       <div className={`fixed top-14 left-0 right-0 z-40 md:hidden bg-white border-b border-[var(--border)] shadow-lg transition-all duration-200 ${menuOpen ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2 pointer-events-none"}`}>
         <div className="px-4 py-3 space-y-1">
-          {NAV_ITEMS.map(({ href, label, highlight }) => {
+          {[...PRIMARY_NAV, ...MORE_NAV].map(({ href, label, highlight }: any) => {
             const active = href === "/" ? location === "/" : location.startsWith(href);
             return (
               <Link key={href} href={href}>
                 <a className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                  active ? "bg-[var(--primary-light)] text-[var(--primary)]"
-                  : highlight ? "bg-[var(--primary)] text-white"
-                  : "text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
+                  active
+                    ? "bg-[var(--primary-light)] text-[var(--primary)]"
+                    : highlight
+                    ? "bg-[var(--primary)] text-white"
+                    : "text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
                 }`}>
-                  {highlight && <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,1 9,5 2,9" /></svg>}
+                  {highlight && (
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                      <polygon points="2,1 9,5 2,9" />
+                    </svg>
+                  )}
                   {label}
                 </a>
               </Link>
@@ -159,7 +240,9 @@ export function Navbar() {
             {!loading && (user ? (
               <>
                 <div className="px-4 pb-2">
-                  <div className="text-sm font-medium text-[var(--text-primary)]">{user.firstName} {user.lastName}</div>
+                  <div className="text-sm font-medium text-[var(--text-primary)]">
+                    {user.firstName} {user.lastName}
+                  </div>
                   <div className="text-xs text-[var(--text-muted)]">
                     {user.isAdmin ? "Admin" : `${user.reportCredits} credit${user.reportCredits === 1 ? "" : "s"}`}
                   </div>
@@ -204,7 +287,10 @@ export function Layout({ children, className = "" }: LayoutProps) {
 }
 
 export function PageHeader({ label, title, subtitle, children }: {
-  label?: string; title: string; subtitle?: string; children?: React.ReactNode;
+  label?: string;
+  title: string;
+  subtitle?: string;
+  children?: React.ReactNode;
 }) {
   return (
     <div className="mb-6 sm:mb-10 animate-fade-up">
