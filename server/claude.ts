@@ -325,6 +325,8 @@ export async function lookupFMP(companyName: string): Promise<{
 // press releases, Companies House, and PitchBook have the real story.
 
 interface PrivateCompanyIntel {
+  industry:           string | null;  // e.g. "Construction Technology / Commissioning Software"
+  companyDescription: string | null;  // e.g. "Cloud-based commissioning management platform for building projects"
   fundingTotal:    string | null;  // e.g. "$735M"
   investors:       string[];       // e.g. ["Infratil (53%)", "Legal & General Capital (32%)"]
   debtFacilities:  string | null;  // e.g. "£206M Deutsche Bank"
@@ -344,8 +346,10 @@ async function lookupPrivateCompanyIntel(companyName: string): Promise<PrivateCo
       system: `You are a business intelligence researcher. Search for funding, investors, key deals, and financial data for private companies. Return ONLY a valid JSON object. No markdown, no explanation, no code fences.`,
       messages: [{
         role: "user",
-        content: `Search the web for business intelligence on "${companyName}" — specifically: investors, funding rounds, debt facilities, key contracts/deals, revenue estimates, and employee count. Return this exact JSON (use null for fields you cannot find):
+        content: `Search the web for "${companyName}" — first establish what this company actually is and does, then find business intelligence. Return this exact JSON (use null for fields you cannot find):
 {
+  "industry": "The company's actual industry/sector based on what you found on their website or reliable sources, e.g. 'Construction Technology / Commissioning Software' or null if genuinely unknown",
+  "companyDescription": "1-2 sentence factual description of what the company does, based on their website or verified sources — NOT inferred from their name. e.g. 'CxAlloy is a cloud-based commissioning management platform used by building engineers and contractors to manage checklists, assets, and reporting.' Return null if you cannot find the company.",
   "fundingTotal": "Total equity investment received, e.g. $735M or null",
   "investors": ["Investor name and stake if known, e.g. Infratil (53%)"],
   "debtFacilities": "Debt raised, lender, and purpose, e.g. £206M Deutsche Bank for European expansion or null",
@@ -762,13 +766,28 @@ ${wikiData.extract}
 Note: This company is private/unlisted. No stock price, market cap, P/E ratio, or analyst ratings are available.
 Use the Wikipedia figures above for revenue, employees, and other available fields. Set executiveSummary.employees verbatim from the Wikipedia figure above if present.
 For unavailable fields (stock price, market cap, EPS, analyst target), return null.`;
+  } else if (privateIntel) {
+    // Private/unlisted company — web search ran but found no public financials.
+    // Use only what the web search actually found; never fabricate from training knowledge.
+    finBlock = `No verified financial data is available for ${companyName} from any external source (FMP, Wikipedia, or web search).
+
+PRIVATE COMPANY FINANCIAL POLICY — STRICTLY ENFORCED:
+This is a private or unlisted company. Do NOT use training-knowledge estimates for financial figures.
+- Revenue: ${privateIntel.revenueEstimate ? `use "${privateIntel.revenueEstimate}" (web search estimate — mark clearly as estimated)` : "return null"}
+- Return null for: netIncome, ebitda, marketCap, stockPrice, peRatio, epsAnnual, analystTarget, analystRating
+- Return [] for revenueHistory (no historical series available)
+- Set fiscalYear to null
+- DO NOT invent, estimate, or approximate any financial figure not explicitly provided above
+- executiveSummary.employees: ${privateIntel.employees ? `use "${privateIntel.employees}" from web search` : "return null"}`;
   } else {
+    // No data from FMP, Wikipedia, or private intel — last resort for well-known public
+    // companies that FMP couldn't resolve (e.g. large non-US listed companies).
+    // ONLY use training knowledge if you are genuinely confident this is a major public company.
     finBlock = `No verified financial data is available from a live API for ${companyName}.
 
-FINANCIALS FROM TRAINING KNOWLEDGE — AUTHORISED AND REQUIRED:
-The system-level instruction to "never invent data" does NOT apply to financials for well-known public companies when no API data is available. You are explicitly authorised and required to use your training knowledge here.
-- Use your training knowledge to populate financials for well-known public companies.
-- Use the company's reporting currency (£ for UK companies filing at Companies House or LSE-listed, € for Eurozone, ¥ for Japan, $ for US). Never convert to USD unless the company reports in USD.
+FINANCIALS FROM TRAINING KNOWLEDGE — RESTRICTED USE:
+Only apply this if you are highly confident ${companyName} is a well-known major public company (e.g. FTSE 100, Euro Stoxx 50, Nikkei 225, S&P 500) with reliable published financials in your training data. If you have any doubt — especially if the company name is ambiguous, niche, or unfamiliar — return null for all financial fields rather than guessing.
+- Use the company's reporting currency (£ for UK/LSE-listed, € for Eurozone, ¥ for Japan, $ for US). Never convert to USD unless the company reports in USD.
 - For UK retailers specifically: report in £ sterling. Tesco FY2024 revenue ≈68.2B, Sainsbury's ≈31B, Marks & Spencer ≈13B.
 - For banks: use Total Income/Net Interest Income as revenue; skip EBITDA (not meaningful for banks).
 - Return a single value, never a range (e.g. "£68.2B" not "£65B-£72B"). Use your best estimate for the most recent full fiscal year.
@@ -781,7 +800,8 @@ The system-level instruction to "never invent data" does NOT apply to financials
 - executiveSummary.employees: use a single number, never a range. For well-known companies: Tesco ~330,000, HSBC ~220,000, Barclays ~85,000, Lloyds ~58,000, NatWest ~62,000, JPMorgan ~310,000.
 - DO NOT return null for revenue, netIncome, or marketCap for a FTSE 100 company. These are always available in your training data.
 - DO NOT return null for employees for a FTSE 100 company. Headcount figures are publicly reported annually.
-- DO NOT return a range for any financial figure. Pick the most accurate single value.`;
+- DO NOT return a range for any financial figure. Pick the most accurate single value.
+- IF YOU ARE NOT CONFIDENT THIS IS A MAJOR PUBLIC COMPANY: return null for all financial fields. Never fabricate.`;
   }
 
   const wikiContextBlock = (!fin && wikiData)
@@ -803,9 +823,15 @@ Use this real-time signal to strengthen: executiveSummary.highlights, marketAnal
 
   const prompt = `Generate strategic intelligence PART A for: ${companyName}
 
-${!fin ? `OVERRIDE: For this request, you ARE authorised to use training knowledge for financial figures. The "never invent data" rule does not apply to well-known public companies' historical financials.
+${!fin && !privateIntel ? `OVERRIDE: For this request, you ARE authorised to use training knowledge for financial figures. The "never invent data" rule does not apply to well-known public companies' historical financials.
 
-` : ""}${privateIntel ? `WEB INTELLIGENCE — VERIFIED LIVE DATA (incorporate ALL of these facts throughout the report):
+` : ""}${privateIntel ? `COMPANY IDENTITY — GROUND TRUTH (verified via live web search — this overrides any assumptions based on the company name):
+- What this company actually is: ${privateIntel.companyDescription ?? "See rawContext below"}
+- Industry/Sector: ${privateIntel.industry ?? "See rawContext below"}
+
+You MUST use this identity when writing companyOverview, the "industry" field, strategy, and market sections. Do NOT infer the company's nature from its name — use only what is stated above.
+
+WEB INTELLIGENCE — VERIFIED LIVE DATA (incorporate ALL of these facts throughout the report):
 - Funding Total: ${privateIntel.fundingTotal ?? "Unknown"}
 - Investors: ${privateIntel.investors?.join(", ") || "Unknown"}
 - Debt Facilities: ${privateIntel.debtFacilities ?? "None found"}
