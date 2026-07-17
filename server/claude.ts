@@ -80,17 +80,65 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
   }
 }
 
+// ─── Company identity lookup via web search ──────────────────────────────────
+// Prevents hallucination by grounding the model in what the company actually does
+// before the main (no-web-search) generation call runs.
+
+async function lookupCompanyIdentity(companyName: string): Promise<{ industry: string; description: string } | null> {
+  try {
+    const message = await client.messages.create({
+      model: MODEL_GROUNDED,
+      max_tokens: 400,
+      system: "You are a factual company research assistant. Search the web and return a JSON object with exactly two fields: \"industry\" (the company's actual industry/sector, e.g. 'Construction Technology / Commissioning Software') and \"description\" (1-2 sentences on what the company does, based on their website or verified sources — NOT inferred from their name). Respond with ONLY the JSON object, no prose.",
+      tools: [{ type: "web_search_20250305" as const, name: "web_search" }],
+      messages: [{ role: "user", content: `Search for the company "${companyName}" and tell me: (1) what industry/sector it operates in, and (2) a brief factual description of what it does. Return ONLY this JSON: {"industry": "...", "description": "..."}` }],
+    });
+
+    const raw = message.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map(b => b.text)
+      .join("")
+      .replace(/<cite[^>]*>[\s\S]*?<\/cite>/g, "");
+
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn(`🔎 Identity lookup: no JSON found for "${companyName}". Raw (first 200 chars): ${raw.slice(0, 200)}`);
+      return null;
+    }
+
+    const d = JSON.parse(jsonMatch[0]) as { industry?: string; description?: string };
+    if (!d.industry || !d.description) return null;
+    console.log(`🔎 Identity for "${companyName}": ${d.industry}`);
+    return { industry: d.industry, description: d.description };
+  } catch (err) {
+    console.warn(`Company identity lookup failed for "${companyName}":`, err);
+    return null;
+  }
+}
+
 // ─── Report Part A: overview + financials + strategy + market ─────────────────
 
 async function generatePartA(companyName: string, knownRevenue?: string): Promise<unknown> {
-  // Resolve CEO via a tiny targeted web search (low token cost) before the main call
-  const currentCEO = await lookupCEO(companyName);
+  // Run CEO and identity lookups concurrently (both use a small targeted web search)
+  const [currentCEO, identity] = await Promise.all([
+    lookupCEO(companyName),
+    lookupCompanyIdentity(companyName),
+  ]);
 
   const revenueHint = knownRevenue
     ? `\nIMPORTANT: The verified revenue for ${companyName} is "${knownRevenue}" — use this exact value in the financials.revenue field and as the most recent year in revenueHistory. Do NOT override it with an estimate.`
     : "";
 
-  const prompt = `Generate strategic intelligence PART A for: ${companyName}${revenueHint}
+  // Ground truth injection — prevents the model from pattern-matching on the company
+  // name (e.g. "Alloy" → materials science) when the company is something else entirely.
+  const identityBlock = identity
+    ? `\n\nCOMPANY IDENTITY — GROUND TRUTH (verified via web search, MUST be used):
+- Industry/sector: ${identity.industry}
+- What the company does: ${identity.description}
+Do NOT override this with assumptions based on the company name. Use it verbatim for the industry field and as the basis for companyOverview.`
+    : "";
+
+  const prompt = `Generate strategic intelligence PART A for: ${companyName}${revenueHint}${identityBlock}
 
 The current CEO is: ${currentCEO} — use this exact name in the executiveSummary.ceo field. Do NOT include the CEO again in keyExecutives.
 For keyExecutives: include between 3 and 8 other senior leaders you are certain exist (CFO, COO, CTO, division presidents, etc). STRICT RULES: real verified names only — if uncertain about a person, omit them entirely. Never invent, guess, or recombine names. Quality over quantity — 4 accurate entries is better than 8 with errors.
