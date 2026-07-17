@@ -361,21 +361,21 @@ async function lookupPrivateCompanyIntel(companyName: string): Promise<PrivateCo
       }],
     });
 
-    const text = message.content
+    const raw = message.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map(b => b.text)
       .join("")
-      .replace(/<cite[^>]*>[\s\S]*?<\/cite>/g, "")
-      .replace(/^```json\n?/, "").replace(/\n?```$/, "")
-      .trim();
+      .replace(/<cite[^>]*>[\s\S]*?<\/cite>/g, "");
 
-    if (!text || !text.startsWith("{")) {
-      console.warn(`🔎 Private intel: no JSON returned for "${companyName}"`);
+    // Extract the first JSON object regardless of surrounding prose or citations
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn(`🔎 Private intel: no JSON found for "${companyName}". Raw (first 300 chars): ${raw.slice(0, 300)}`);
       return null;
     }
 
-    const d = JSON.parse(text) as PrivateCompanyIntel;
-    console.log(`🔎 Private intel for "${companyName}": funding=${d.fundingTotal}, investors=${d.investors?.length ?? 0}, deals=${d.keyDeals?.length ?? 0}`);
+    const d = JSON.parse(jsonMatch[0]) as PrivateCompanyIntel;
+    console.log(`🔎 Private intel for "${companyName}": industry=${d.industry}, funding=${d.fundingTotal}, investors=${d.investors?.length ?? 0}, deals=${d.keyDeals?.length ?? 0}`);
     return d;
   } catch (err) {
     console.warn(`Private company intel lookup failed for "${companyName}":`, err);
