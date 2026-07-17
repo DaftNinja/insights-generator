@@ -935,7 +935,7 @@ Return ONLY this JSON:
 
 // ─── Report Part B: tech + ESG + SWOT + growth + risk + digital ──────────────
 
-async function generatePartB(companyName: string, esgData?: FMPESGData | null, socialContext?: string | null): Promise<unknown> {
+async function generatePartB(companyName: string, esgData?: FMPESGData | null, socialContext?: string | null, privateIntel?: PrivateCompanyIntel | null): Promise<unknown> {
   const esgBlock = esgData
     ? `VERIFIED ESG DATA (Financial Modeling Prep — use verbatim, do not alter):
 - ESG Rating:          ${esgData.esgRating}
@@ -962,9 +962,21 @@ ${socialContext}
 Use this real-time signal to strengthen: swot (opportunities and threats especially), riskAssessment.risks, growthOpportunities.opportunities, digitalTransformation. Prioritise recent facts over training-data assumptions where they conflict. Do not fabricate sources or citations.`
     : "";
 
+  // Identity grounding — same ground-truth block as Part A, prevents Part B from
+  // pattern-matching on the company name for SWOT / growth / risk sections.
+  const identityBlock = (privateIntel?.industry || privateIntel?.companyDescription)
+    ? `COMPANY IDENTITY — GROUND TRUTH (verified via live web search — this overrides any assumptions based on the company name):
+- What this company actually is: ${privateIntel?.companyDescription ?? "Not specified — rely on the industry/sector below"}
+- Industry/Sector: ${privateIntel?.industry ?? "Not specified — rely on the description above"}
+
+You MUST use this identity when writing swot, growthOpportunities, riskAssessment, and digitalTransformation. Do NOT infer the company's nature from its name.
+
+`
+    : "";
+
   const prompt = `Generate strategic intelligence PART B for: ${companyName}
 
-${socialBlock ? socialBlock + "\n\n" : ""}${esgBlock}
+${identityBlock}${socialBlock ? socialBlock + "\n\n" : ""}${esgBlock}
 
 Return ONLY this JSON:
 {
@@ -1161,7 +1173,7 @@ export async function generateReport(companyName: string): Promise<unknown> {
   }
 
   const partA = await generatePartA(companyName, financials, currentCEO, wikiData, socialContext, privateIntel);
-  const partB = await generatePartB(companyName, fmpData.esg, socialContext);
+  const partB = await generatePartB(companyName, fmpData.esg, socialContext, privateIntel);
 
   console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (FMP + Wiki + CEO + Haiku x2)`);
 
