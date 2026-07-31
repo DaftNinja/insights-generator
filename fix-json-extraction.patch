@@ -1,0 +1,56 @@
+From 1efed38409d24f2e9e33222d444e08887f2b8064 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 17 Jul 2026 18:25:55 +0000
+Subject: [PATCH] fix: robustly extract JSON from private intel response
+
+The previous check `text.startsWith("{")` failed whenever the model
+returned prose or citations before the JSON object (common with the
+web_search tool). Switch to a regex extraction that finds the first
+JSON object anywhere in the response, so the private company identity
+grounding (industry, companyDescription) is reliably populated.
+
+Also log the raw response prefix on failure to aid future debugging.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DcegsR17umvn5rKfCrYZP8
+---
+ server/claude.ts | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/server/claude.ts b/server/claude.ts
+index 3dc7c9e..fe1c84b 100644
+--- a/server/claude.ts
++++ b/server/claude.ts
+@@ -361,21 +361,21 @@ async function lookupPrivateCompanyIntel(companyName: string): Promise<PrivateCo
+       }],
+     });
+ 
+-    const text = message.content
++    const raw = message.content
+       .filter((b): b is Anthropic.TextBlock => b.type === "text")
+       .map(b => b.text)
+       .join("")
+-      .replace(/<cite[^>]*>[\s\S]*?<\/cite>/g, "")
+-      .replace(/^```json\n?/, "").replace(/\n?```$/, "")
+-      .trim();
++      .replace(/<cite[^>]*>[\s\S]*?<\/cite>/g, "");
+ 
+-    if (!text || !text.startsWith("{")) {
+-      console.warn(`🔎 Private intel: no JSON returned for "${companyName}"`);
++    // Extract first JSON object from the response regardless of surrounding prose/citations
++    const jsonMatch = raw.match(/\{[\s\S]*\}/);
++    if (!jsonMatch) {
++      console.warn(`🔎 Private intel: no JSON found in response for "${companyName}". Raw (first 300 chars): ${raw.slice(0, 300)}`);
+       return null;
+     }
+ 
+-    const d = JSON.parse(text) as PrivateCompanyIntel;
+-    console.log(`🔎 Private intel for "${companyName}": funding=${d.fundingTotal}, investors=${d.investors?.length ?? 0}, deals=${d.keyDeals?.length ?? 0}`);
++    const d = JSON.parse(jsonMatch[0]) as PrivateCompanyIntel;
++    console.log(`🔎 Private intel for "${companyName}": industry=${d.industry}, funding=${d.fundingTotal}, investors=${d.investors?.length ?? 0}, deals=${d.keyDeals?.length ?? 0}`);
+     return d;
+   } catch (err) {
+     console.warn(`Private company intel lookup failed for "${companyName}":`, err);
+-- 
+2.43.0
+
