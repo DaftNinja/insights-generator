@@ -86,8 +86,8 @@ export function Login() {
             <img
               src="/mc-logo.png"
               alt="Maudslay Consulting"
-              className="h-12 w-auto object-contain"
-              style={{ maxWidth: "220px" }}
+              className="h-24 w-auto object-contain"
+              style={{ maxWidth: "440px" }}
             />
           </a>
         </Link>

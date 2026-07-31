@@ -50,7 +50,7 @@ export function Navbar() {
   return (
     <>
       <nav className="sticky top-0 z-50 border-b border-[var(--border)] bg-white/97 backdrop-blur-md shadow-sm">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
+        <div className="mx-auto flex h-24 max-w-7xl items-center justify-between px-4 sm:px-6">
 
           {/* Logo */}
           <Link href="/">
@@ -58,8 +58,8 @@ export function Navbar() {
               <img
                 src="/mc-logo.png"
                 alt="Maudslay Consulting"
-                className="h-9 w-auto object-contain"
-                style={{ maxWidth: "180px" }}
+                className="h-[72px] w-auto object-contain"
+                style={{ maxWidth: "360px" }}
               />
             </a>
           </Link>
