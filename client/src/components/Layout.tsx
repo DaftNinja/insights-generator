@@ -17,9 +17,16 @@ const NAV_ITEMS = [
 function MCMark({ size = 32 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="32" height="32" rx="4" fill="#1C2B5C" />
-      <text x="3" y="23" fontFamily="Georgia, serif" fontSize="19" fontWeight="700" fill="#FFFFFF">M</text>
-      <text x="17" y="25" fontFamily="Georgia, serif" fontSize="12" fontWeight="400" fill="#A0A8C4">C</text>
+      <rect width="32" height="32" rx="3" fill="#111111" />
+      {/* Red left leg of M */}
+      <polygon points="4,7 9,7 9,25 4,25" fill="#CC0000" />
+      <polygon points="4,7 13,7 9,14 4,14" fill="#CC0000" />
+      {/* Black right side of M */}
+      <polygon points="9,7 17,7 13,14 9,14" fill="#ffffff" />
+      <polygon points="13,7 20,7 20,25 15,25 15,14 13,14" fill="#ffffff" />
+      <polygon points="20,7 28,7 28,25 23,25" fill="#ffffff" />
+      <polygon points="20,7 28,7 24,14 20,14" fill="#ffffff" />
+      <polygon points="15,14 20,14 17,25 12,25" fill="#ffffff" />
     </svg>
   );
 }
@@ -47,22 +54,13 @@ export function Navbar() {
 
           {/* Logo */}
           <Link href="/">
-            <a className="flex items-center gap-3 group">
-              <MCMark size={34} />
-              <div className="flex flex-col leading-none">
-                <span
-                  className="text-sm font-semibold tracking-widest text-[var(--primary)] uppercase"
-                  style={{ fontFamily: "Georgia, serif", letterSpacing: "0.12em" }}
-                >
-                  Maudslay
-                </span>
-                <span
-                  className="text-[9px] tracking-widest text-[var(--text-muted)] uppercase"
-                  style={{ letterSpacing: "0.22em" }}
-                >
-                  Consulting
-                </span>
-              </div>
+            <a className="flex items-center group">
+              <img
+                src="/mc-logo.png"
+                alt="Maudslay Consulting"
+                className="h-9 w-auto object-contain"
+                style={{ maxWidth: "180px" }}
+              />
             </a>
           </Link>
 

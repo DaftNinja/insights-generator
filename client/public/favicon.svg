@@ -1,5 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#1C2B5C"/>
-  <text x="3" y="24" font-family="Georgia, serif" font-size="19" font-weight="700" fill="#FFFFFF">M</text>
-  <text x="16" y="26" font-family="Georgia, serif" font-size="13" font-weight="400" fill="#A0A5B8">C</text>
+  <rect width="32" height="32" rx="4" fill="#111111"/>
+  <!-- Red left leg of M -->
+  <rect x="4" y="7" width="5" height="18" fill="#CC0000"/>
+  <polygon points="4,7 13,7 9,14 4,14" fill="#CC0000"/>
+  <!-- White right portion of M -->
+  <polygon points="9,7 17,7 13,14 9,14" fill="#ffffff"/>
+  <rect x="15" y="7" width="5" height="18" fill="#ffffff"/>
+  <polygon points="15,7 24,7 20,14 15,14" fill="#ffffff"/>
+  <polygon points="20,7 28,7 28,25 23,25 23,14 20,14" fill="#ffffff"/>
+  <polygon points="11,14 15,14 13,25 9,25" fill="#ffffff"/>
 </svg>

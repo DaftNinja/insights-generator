@@ -82,22 +82,17 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center bg-[var(--bg-primary)] px-4 py-12">
       <div className="w-full max-w-md">
         <Link href="/">
-          <a className="mb-10 flex flex-col items-center justify-center gap-3">
-            <svg width="56" height="56" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="32" height="32" rx="4" fill="#1C2B5C" />
-              <text x="3" y="23" fontFamily="Georgia, serif" fontSize="19" fontWeight="700" fill="#FFFFFF">M</text>
-              <text x="17" y="25" fontFamily="Georgia, serif" fontSize="12" fontWeight="400" fill="#A0A8C4">C</text>
-            </svg>
-            <div className="text-center">
-              <div className="text-base font-semibold tracking-[0.15em] text-[var(--primary)] uppercase" style={{ fontFamily: "Georgia, serif" }}>
-                Maudslay
-              </div>
-              <div className="text-[10px] tracking-[0.25em] text-[var(--text-muted)] uppercase">Consulting</div>
-            </div>
+          <a className="mb-10 flex items-center justify-center">
+            <img
+              src="/mc-logo.png"
+              alt="Maudslay Consulting"
+              className="h-12 w-auto object-contain"
+              style={{ maxWidth: "220px" }}
+            />
           </a>
         </Link>
 
-        <div className="rounded-sm border border-[var(--border)] bg-white p-8 shadow-sm" style={{ borderTop: "2px solid #1C2B5C" }}>
+        <div className="rounded-sm border border-[var(--border)] bg-white p-8 shadow-sm" style={{ borderTop: "2px solid var(--primary)" }}>
           {stage === "sent" ? (
             <SentPanel email={email} onBack={() => { setStage("form"); setError(""); }} />
           ) : (
