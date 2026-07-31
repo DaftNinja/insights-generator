@@ -68,7 +68,7 @@ export function Dashboard() {
     setExporting(format);
     try {
       const data = report.reportData as ReportData;
-      if (format === "pdf") await exportToPDF(report.companyName);
+      if (format === "pdf") await exportToPDF(report.companyName, data);
       else if (format === "pptx") await exportToPPTX(data);
       else exportToHTML(data);
     } catch (err) {
@@ -106,6 +106,10 @@ export function Dashboard() {
   if (!report || !report.reportData) return null;
   const data = report.reportData as ReportData;
   const sales = report.salesEnablementData as SalesEnablement | null;
+
+  // ── Financial data source metadata ──────────────────────────────────────
+  const finMeta = (data as any)._financialsMeta as FinMetaType;
+
 
   return (
     <Layout>
@@ -191,7 +195,7 @@ export function Dashboard() {
         {/* Tab Content */}
         <div className="animate-fade-up">
           {activeTab === "summary" && <SummaryTab data={data} />}
-          {activeTab === "financials" && <FinancialsTab data={data} />}
+          {activeTab === "financials" && <FinancialsTab data={data} finMeta={finMeta} />}
           {activeTab === "strategy" && <StrategyTab data={data} />}
           {activeTab === "market" && <MarketTab data={data} />}
           {activeTab === "tech" && <TechTab data={data} />}
@@ -225,7 +229,7 @@ function SummaryTab({ data }: { data: ReportData }) {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <MetricCard label="CEO" value={es.ceo} delay={0} />
         <MetricCard label="Founded" value={es.founded} delay={80} />
-        <MetricCard label="Employees" value={es.employees} delay={160} />
+        <MetricCard label="Employees" value={es.employees ? (() => { const n = parseInt(String(es.employees).replace(/[^0-9]/g, ""), 10); return isNaN(n) ? es.employees : n.toLocaleString("en-GB"); })() : es.employees} delay={160} />
         <MetricCard label="HQ" value={es.headquarters} delay={240} />
       </div>
 
@@ -238,7 +242,7 @@ function SummaryTab({ data }: { data: ReportData }) {
         <div className="card">
           <div className="section-title">Key Highlights</div>
           <ul className="space-y-2">
-            {es.highlights.map((h, i) => (
+            {(es.highlights ?? []).map((h, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
                 <span className="text-[var(--primary)] mt-0.5">◆</span>
                 {h}
@@ -249,7 +253,7 @@ function SummaryTab({ data }: { data: ReportData }) {
         <div className="card">
           <div className="section-title">Senior Leadership</div>
           <ul className="space-y-2">
-            {es.keyExecutives.map((exec, i) => (
+            {(es.keyExecutives ?? []).map((exec, i) => (
               <li key={i} className="flex items-center justify-between text-sm">
                 <span className="text-[var(--text-primary)] font-medium">{exec.name}</span>
                 <span className="text-[var(--text-muted)] text-xs">{exec.title}</span>
@@ -271,36 +275,152 @@ function SummaryTab({ data }: { data: ReportData }) {
   );
 }
 
-function FinancialsTab({ data }: { data: ReportData }) {
+// ── Private-company helpers ────────────────────────────────────────────────────
+// A company is considered private/unlisted when stockTicker is null or missing.
+const isPrivateCompany = (fin: ReportData["financials"]) =>
+  !fin.stockTicker || fin.stockTicker === "null" || fin.stockTicker === "N/A";
+
+// Stock-market-only metrics that are meaningless for private companies.
+const MARKET_ONLY_METRICS = new Set(["P/E Ratio", "EPS", "Stock Price"]);
+
+function PrivateCompanyBanner({ companyName }: { companyName: string }) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+      {/* Lock icon */}
+      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-amber-300 bg-amber-100">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-amber-600">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-amber-800">
+          Private Company — Limited Public Financial Data
+        </p>
+        <p className="mt-0.5 text-xs leading-relaxed text-amber-700">
+          {companyName} is privately held and not listed on a public exchange. Real-time market data
+          (stock price, market cap, P/E ratio, analyst ratings) is not publicly available. Revenue,
+          AUM, and other figures shown are sourced from public disclosures and Wikipedia where available.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+type FinMetaType = {
+  source: "FMP" | "Wikipedia" | "LLM" | "none";
+  confidence: "verified" | "single-source" | "wikipedia" | "estimated" | "unavailable";
+  fiscalYear: string | null;
+  retrievedAt: string;
+} | undefined;
+
+function FinancialsTab({ data, finMeta }: { data: ReportData; finMeta: FinMetaType }) {
   const fin = data.financials;
+  if (!fin) return <div className="card"><p className="text-[var(--text-muted)]">Financial data not available.</p></div>;
+  const isPrivate = isPrivateCompany(fin);
+
+  function SourceBadge() {
+    if (!finMeta) return null;
+    const cfg = {
+      verified:        { label: "Verified · FMP",          bg: "bg-emerald-900/60", text: "text-emerald-400", dot: "bg-emerald-400" },
+      "single-source": { label: "Single source · FMP",    bg: "bg-blue-900/60",    text: "text-blue-400",    dot: "bg-blue-400" },
+      wikipedia:       { label: "Wikipedia",               bg: "bg-blue-900/60",    text: "text-blue-400",    dot: "bg-blue-400" },
+      estimated:       { label: "AI estimate · unverified", bg: "bg-amber-900/60", text: "text-amber-400",   dot: "bg-amber-400" },
+      unavailable:     { label: "No data source",          bg: "bg-slate-800",      text: "text-slate-400",   dot: "bg-slate-500" },
+    }[finMeta.confidence] ?? { label: "Unknown", bg: "bg-slate-800", text: "text-slate-400", dot: "bg-slate-500" };
+    return (
+      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${cfg.bg} ${cfg.text}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+        {cfg.label}
+        {finMeta.fiscalYear && <span className="opacity-60">· {finMeta.fiscalYear}</span>}
+      </span>
+    );
+  }
+
   return (
     <div className="space-y-6">
+
+      {/* Private company notice — shown above all content */}
+      {isPrivate && <PrivateCompanyBanner companyName={data.companyName} />}
+
+      {/* Financial data source badge */}
+      <div className="flex items-center gap-2 mb-2">
+        <SourceBadge />
+        {finMeta?.confidence === "estimated" && (
+          <span className="text-xs text-amber-400/80">
+            ⚠ Financial figures are AI estimates from training data — verify against published accounts before use
+          </span>
+        )}
+        {finMeta?.confidence === "unavailable" && (
+          <span className="text-xs text-slate-400">
+            Financial data unavailable — check FMP API key or retry generation
+          </span>
+        )}
+      </div>
+
+      {/* Top metric cards — for private companies, market-cap card is replaced with a locked placeholder */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <MetricCard label="Revenue" value={fin.revenue} sub={fin.revenueGrowth} trend="up" delay={0} />
         <MetricCard label="Net Income" value={fin.netIncome} delay={80} />
         <MetricCard label="EBITDA" value={fin.ebitda} delay={160} />
-        <MetricCard label="Market Cap" value={fin.marketCap} delay={240} />
+        {isPrivate ? (
+          <div
+            className="metric-card animate-fade-up opacity-60"
+            style={{ animationDelay: "240ms" }}
+            title="Market cap is not available for privately held companies"
+          >
+            <div className="metric-label flex items-center gap-1.5">
+              Market Cap
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-amber-500 shrink-0">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </div>
+            <div className="metric-value text-[var(--text-muted)] text-base">Not public</div>
+          </div>
+        ) : (
+          <MetricCard label="Market Cap" value={fin.marketCap} delay={240} />
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="card">
           <div className="section-title">Revenue History</div>
-          <RevenueChart data={fin.revenueHistory} />
+          <RevenueChart data={fin.revenueHistory ?? []} />
         </div>
         <div className="card">
           <div className="section-title">Key Metrics</div>
           <div className="space-y-3">
-            {fin.keyMetrics.map((m, i) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-[var(--border)] last:border-0">
-                <span className="text-sm text-[var(--text-secondary)]">{m.label}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-[var(--text-primary)] font-mono">{m.value}</span>
-                  <span className={`text-xs ${m.trend === "up" ? "text-[var(--primary)]" : m.trend === "down" ? "text-red-400" : "text-[var(--text-muted)]"}`}>
-                    {m.trend === "up" ? "↑" : m.trend === "down" ? "↓" : "→"}
-                  </span>
+            {(fin.keyMetrics ?? []).map((m, i) => {
+              const isLocked = isPrivate && MARKET_ONLY_METRICS.has(m.label);
+              return (
+                <div
+                  key={i}
+                  className={`flex items-center justify-between py-2 border-b border-[var(--border)] last:border-0 ${isLocked ? "opacity-50" : ""}`}
+                  title={isLocked ? `${m.label} is not available for privately held companies` : undefined}
+                >
+                  <div className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
+                    {m.label}
+                    {isLocked && (
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-amber-500 shrink-0">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-[var(--text-primary)] font-mono">
+                      {isLocked ? "N/A" : m.value}
+                    </span>
+                    {!isLocked && (
+                      <span className={`text-xs ${m.trend === "up" ? "text-[var(--primary)]" : m.trend === "down" ? "text-red-400" : "text-[var(--text-muted)]"}`}>
+                        {m.trend === "up" ? "↑" : m.trend === "down" ? "↓" : "→"}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -330,7 +450,7 @@ function StrategyTab({ data }: { data: ReportData }) {
       <div className="card">
         <div className="section-title">Core Strategic Initiatives</div>
         <div className="space-y-4">
-          {s.coreInitiatives.map((init, i) => (
+          {(s.coreInitiatives ?? []).map((init, i) => (
             <div key={i} className="flex gap-4 p-4 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)]">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-xs font-bold text-[var(--primary)] font-display">
                 {i + 1}
@@ -359,7 +479,7 @@ function StrategyTab({ data }: { data: ReportData }) {
       <div className="card">
         <div className="section-title">Geographic Focus</div>
         <div className="flex flex-wrap gap-2">
-          {s.geographicFocus.map((region, i) => (
+          {(s.geographicFocus ?? []).map((region, i) => (
             <span key={i} className="badge badge-blue">{region}</span>
           ))}
         </div>
@@ -385,7 +505,7 @@ function MarketTab({ data }: { data: ReportData }) {
         <div className="card">
           <div className="section-title">Top Competitors</div>
           <div className="space-y-3">
-            {m.competitors.map((c, i) => (
+            {(m.competitors ?? []).map((c, i) => (
               <div key={i} className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-medium text-[var(--text-primary)]">{c.name}</div>
@@ -401,7 +521,7 @@ function MarketTab({ data }: { data: ReportData }) {
         <div className="card">
           <div className="section-title">Customer Segments</div>
           <div className="flex flex-wrap gap-2">
-            {m.customerSegments.map((seg, i) => (
+            {(m.customerSegments ?? []).map((seg, i) => (
               <span key={i} className="badge badge-blue">{seg}</span>
             ))}
           </div>
@@ -409,7 +529,7 @@ function MarketTab({ data }: { data: ReportData }) {
         <div className="card">
           <div className="section-title">Geographic Revenue Mix</div>
           <div className="space-y-2">
-            {m.geographicPresence.map((g, i) => (
+            {(m.geographicPresence ?? []).map((g, i) => (
               <div key={i} className="flex items-center gap-3">
                 <div className="w-20 text-xs text-[var(--text-muted)]">{g.region}</div>
                 <div className="flex-1 h-2 rounded-full bg-[var(--bg-secondary)]">
@@ -427,7 +547,7 @@ function MarketTab({ data }: { data: ReportData }) {
       <div className="card">
         <div className="section-title">Market Trends</div>
         <ul className="space-y-2">
-          {m.marketTrends.map((t, i) => (
+          {(m.marketTrends ?? []).map((t, i) => (
             <li key={i} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
               <span className="text-[var(--primary)] mt-0.5 shrink-0">→</span>
               {t}
@@ -450,7 +570,7 @@ function TechTab({ data }: { data: ReportData }) {
       <div className="card">
         <div className="section-title">Cloud Platforms</div>
         <div className="flex flex-wrap gap-2">
-          {t.cloudPlatforms.map((p, i) => (
+          {(t.cloudPlatforms ?? []).map((p, i) => (
             <span key={i} className="badge badge-blue">{p}</span>
           ))}
         </div>
@@ -468,7 +588,7 @@ function TechTab({ data }: { data: ReportData }) {
               </tr>
             </thead>
             <tbody>
-              {t.keyVendors.map((v, i) => (
+              {(t.keyVendors ?? []).map((v, i) => (
                 <tr key={i} className="border-b border-[var(--border)] last:border-0">
                   <td className="py-2.5 font-medium text-[var(--text-primary)]">{v.vendor}</td>
                   <td className="py-2.5 text-[var(--text-muted)]">{v.category}</td>
@@ -480,7 +600,7 @@ function TechTab({ data }: { data: ReportData }) {
         </div>
         {/* Mobile stacked list */}
         <div className="sm:hidden space-y-3">
-          {t.keyVendors.map((v, i) => (
+          {(t.keyVendors ?? []).map((v, i) => (
             <div key={i} className="rounded-lg bg-[var(--bg-secondary)] p-3">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm font-medium text-[var(--text-primary)]">{v.vendor}</span>
@@ -504,7 +624,7 @@ function TechTab({ data }: { data: ReportData }) {
       <div className="card">
         <div className="section-title">Emerging Technology Investments</div>
         <div className="flex flex-wrap gap-2">
-          {t.emergingTech.map((tech, i) => (
+          {(t.emergingTech ?? []).map((tech, i) => (
             <span key={i} className="badge badge-violet">{tech}</span>
           ))}
         </div>
@@ -527,7 +647,7 @@ function ESGTab({ data }: { data: ReportData }) {
         <div className="card">
           <div className="section-title text-[var(--primary)]">Environmental Initiatives</div>
           <ul className="space-y-2">
-            {e.environmentalInitiatives.map((item, i) => (
+            {(e.environmentalInitiatives ?? []).map((item, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
                 <span className="text-[var(--primary)] shrink-0">🌱</span>{item}
               </li>
@@ -537,7 +657,7 @@ function ESGTab({ data }: { data: ReportData }) {
         <div className="card">
           <div className="section-title text-blue-400">Social Initiatives</div>
           <ul className="space-y-2">
-            {e.socialInitiatives.map((item, i) => (
+            {(e.socialInitiatives ?? []).map((item, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
                 <span className="text-blue-400 shrink-0">🤝</span>{item}
               </li>
@@ -548,7 +668,7 @@ function ESGTab({ data }: { data: ReportData }) {
       <div className="card">
         <div className="section-title">ESG Risk Factors</div>
         <div className="flex flex-wrap gap-2">
-          {e.esgRisks.map((risk, i) => (
+          {(e.esgRisks ?? []).map((risk, i) => (
             <span key={i} className="badge badge-amber">{risk}</span>
           ))}
         </div>
@@ -573,7 +693,7 @@ function GrowthTab({ data }: { data: ReportData }) {
         <p className="text-sm text-[var(--text-secondary)]">{g.summary}</p>
       </div>
       <div className="space-y-4">
-        {g.opportunities.map((opp, i) => (
+        {(g.opportunities ?? []).map((opp, i) => (
           <div key={i} className="card-hover animate-fade-up" style={{ animationDelay: `${i * 80}ms` }}>
             <div className="flex items-start justify-between gap-4 mb-2">
               <h4 className="font-display text-base font-bold text-[var(--text-primary)]">{opp.title}</h4>
@@ -628,7 +748,7 @@ function DigitalTab({ data }: { data: ReportData }) {
       <div className="card">
         <div className="section-title">Key Initiatives</div>
         <div className="space-y-3">
-          {dx.keyInitiatives.map((init, i) => (
+          {(dx.keyInitiatives ?? []).map((init, i) => (
             <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-[var(--bg-secondary)]">
               <span className={`badge ${statusColor[init.status] ?? "badge-blue"} shrink-0 mt-0.5`}>
                 {init.status.replace("_", " ")}
@@ -654,7 +774,7 @@ function DigitalTab({ data }: { data: ReportData }) {
       <div className="card">
         <div className="section-title">Transformation Challenges</div>
         <ul className="space-y-2">
-          {dx.challenges.map((c, i) => (
+          {(dx.challenges ?? []).map((c, i) => (
             <li key={i} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
               <span className="text-amber-400 shrink-0">⚠</span>{c}
             </li>

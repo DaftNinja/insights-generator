@@ -1,29 +1,622 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import * as path from "path";
+import { existsSync as fsExistsSync } from "fs";
+
+const execFileAsync = promisify(execFile);
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// ─── Data source tagging ─────────────────────────────────────────────────────
+// Every financial field in the report carries a _dataSource block so the UI
+// can render a badge (green=verified, amber=single-source, red=estimated).
+
+export type DataConfidence = "verified" | "single-source" | "wikipedia" | "estimated" | "unavailable";
+
+export interface FinancialsMetadata {
+  source:      "FMP" | "Wikipedia" | "LLM" | "none";
+  confidence:  DataConfidence;
+  fiscalYear:  string | null;   // e.g. "FY2024" — the period the numbers relate to
+  retrievedAt: string;          // ISO date string
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
-// MODEL_GROUNDED: used only for the lean CEO lookup (web search, max_tokens: 200).
-// MODEL_FAST: used for all main report generation — no web search, low token cost.
 const MODEL_GROUNDED = "claude-haiku-4-5-20251001";
-const MODEL_FAST = "claude-haiku-4-5-20251001";
+const MODEL_FAST     = "claude-haiku-4-5-20251001";
 
-const SYSTEM = `You are an elite strategic intelligence analyst.
-Respond with ONLY valid JSON — no prose, no markdown fences, no explanation.
-Do NOT write any introductory sentences or narrate your search process. Output JSON immediately.
-Use real accurate data for well-known companies. Estimates for smaller ones.
-CRITICAL: For CEO and key executives, only provide names you are highly confident are currently accurate.
-If uncertain about the current CEO, set "ceo" to "See company website for current CEO".
-Never confuse executives across different companies.
-All currency in USD unless the company primarily operates in another currency.
-Dates in dd/mm/yyyy format.
-Be concise — keep string values short (1-2 sentences max), keep arrays to 3-5 items max except keyExecutives (3-8 entries, verified names only).`;
+// ─── Financial Modeling Prep (FMP) ───────────────────────────────────────────
+// Single integration covering financials and ESG scores. One key, one dependency.
 
-// ─── CEO lookup via web search (minimal token footprint) ──────────────────────
-// Uses web search only to resolve the current CEO, then discards the search context.
-// A full web-search Part A call consumes ~40-50k tokens and blows the build-tier limit.
+const FMP_KEY  = process.env.FMP_API_KEY ?? "";
+const FMP_BASE = "https://financialmodelingprep.com/stable";
+
+// ── Shared types ──────────────────────────────────────────────────────────────
+
+export interface FMPFinancials {
+  ticker:          string;
+  fiscalYear:      string;
+  revenue:         string;
+  revenueGrowth:   string;
+  netIncome:       string;
+  ebitda:          string;
+  grossMargin:     string;
+  operatingMargin: string;
+  marketCap:       string;
+  stockPrice:      string;
+  peRatio:         string;
+  epsAnnual:       string;
+  analystTarget:   string;
+  analystRating:   string;
+  employees:       string | null;   // fullTimeEmployees from FMP profile
+  revenueHistory:  { year: string; revenue: string; growth: string }[];
+}
+
+export interface FMPESGData {
+  ticker:             string;
+  companyName:        string;
+  esgScore:           number;   // 0–100 composite
+  environmentScore:   number;
+  socialScore:        number;
+  governanceScore:    number;
+  esgRating:          string;   // e.g. "A", "BBB"
+  esgRisk:            string;   // e.g. "Low", "Medium", "High"
+  lastUpdated:        string;
+}
+
+// ── Wikipedia supplemental data type ─────────────────────────────────────────
+
+export interface WikipediaData {
+  title:       string;
+  extract:     string;   // plain-text intro paragraph(s)
+  founded:     string | null;
+  headquarters: string | null;
+  employees:   string | null;
+  revenue:     string | null;
+  netIncome:   string | null;
+  aum:         string | null;   // assets under management (finance companies)
+  totalAssets: string | null;
+  website:     string | null;
+  parentOrg:   string | null;
+  source:      "wikipedia";
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmt(n: number | undefined | null): string {
+  if (n == null || isNaN(n)) return "N/A";
+  if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+  if (Math.abs(n) >= 1e9)  return `$${(n / 1e9).toFixed(1)}B`;
+  if (Math.abs(n) >= 1e6)  return `$${(n / 1e6).toFixed(0)}M`;
+  return `$${n.toLocaleString()}`;
+}
+
+function fmtPct(n: number | undefined | null): string {
+  if (n == null || isNaN(n)) return "N/A";
+  return `${(n * 100).toFixed(1)}%`;
+}
+
+async function fmpGet<T>(path: string): Promise<T | null> {
+  if (!FMP_KEY) return null;
+  try {
+    // path already contains ? params (e.g. /income-statement?symbol=BARC.L&limit=5)
+    const url = `${FMP_BASE}${path}&apikey=${FMP_KEY}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      // 402 = plan limitation (expected), 404 = no data for symbol (expected) — log as info not error
+      const level = (res.status === 402 || res.status === 404) ? 'info' : 'warn';
+      console[level](`FMP ${path} → ${res.status}: ${body.slice(0, 150)}`);
+      return null;
+    }
+    return await res.json() as T;
+  } catch (err) {
+    console.warn(`FMP fetch error (${path}):`, err);
+    return null;
+  }
+}
+
+// ── Step 1: resolve company name → ticker ─────────────────────────────────────
+
+async function resolveFMPTicker(companyName: string): Promise<string | null> {
+  if (!FMP_KEY) { console.warn("FMP_API_KEY not set — skipping FMP lookup"); return null; }
+  console.log(`📈 FMP key present (length=${FMP_KEY.length}, first4=${FMP_KEY.slice(0,4)})`);
+  try {
+    const searchUrl = `${FMP_BASE}/search-name?query=${encodeURIComponent(companyName)}&limit=5&apikey=${FMP_KEY}`;
+    console.log(`📈 FMP searching: ${searchUrl.replace(FMP_KEY, '[REDACTED]')}`);
+    const res = await fetch(searchUrl, { signal: AbortSignal.timeout(10000) });
+    console.log(`📈 FMP search response: ${res.status} ${res.statusText}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '(unreadable)');
+      console.warn(`📈 FMP error body: ${body.slice(0, 200)}`);
+      return null;
+    }
+
+    const results = await res.json() as { symbol: string; name: string; exchangeShortName?: string; exchange?: string }[];
+    if (!results?.length) return null;
+
+    const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const query     = normalise(companyName);
+
+    const US_EXCHANGES  = new Set(["NASDAQ", "NYSE", "AMEX", "NYSE ARCA"]);
+    const ALL_EXCHANGES = new Set([
+      "NASDAQ", "NYSE", "AMEX", "NYSE ARCA",
+      "LSE", "LON", "LSE AIM", "EURONEXT", "XETRA", "EPA", "EBR", "AMS", "STO", "CPH", "HEL", "VIE",
+      "TSX", "ASX", "NSE", "BSE", "HKEX", "TSE", "SGX", "NZX",
+      "JSE", "BOVESPA", "BMV",
+    ]);
+
+    const nameMatch = (r: { symbol: string; name: string; exchange?: string }) =>
+      normalise(r.name) === query || normalise(r.name).includes(query);
+
+    const match =
+      results.find(r => nameMatch(r) && US_EXCHANGES.has(r.exchange ?? "")) ??
+      results.find(r => nameMatch(r) && ALL_EXCHANGES.has(r.exchange ?? "")) ??
+      results.find(r => nameMatch(r));
+
+    if (!match) { return null; }
+
+    console.log(`📈 FMP resolved "${companyName}" → ${match.symbol} (${match.exchange ?? 'unknown exchange'})`);
+    return match.symbol;
+  } catch (err) {
+    console.warn(`FMP ticker resolution failed for "${companyName}":`, err);
+    return null;
+  }
+}
+
+// ── Step 2a: fetch financials ─────────────────────────────────────────────────
+
+async function fetchFMPFinancials(ticker: string): Promise<FMPFinancials | null> {
+  type IncomeReport = {
+    calendarYear?: string; date?: string;
+    revenue?: number; netIncome?: number; ebitda?: number;
+    operatingIncome?: number;
+    grossProfitRatio?: number; operatingIncomeRatio?: number;
+  };
+  type CashFlowReport = {
+    depreciationAndAmortization?: number;
+  };
+  type ProfileData = {
+    mktCap?: number; price?: number; pe?: number; eps?: number;
+    fullTimeEmployees?: number; sector?: string;
+  };
+  type RatingData = {
+    ratingDetailsDCFRecommendation?: string;
+    ratingDetailsROERecommendation?: string;
+    rating?: string;
+  };
+  type PriceTargetData = { priceTarget?: number };
+
+  const [incomeRaw, cashFlowRaw, profileRaw, ratingRaw, targetRaw] = await Promise.all([
+    fmpGet<IncomeReport[]>(`/income-statement?symbol=${ticker}&limit=5`),
+    fmpGet<CashFlowReport[]>(`/cash-flow-statement?symbol=${ticker}&limit=1`),
+    fmpGet<ProfileData[]>(`/profile?symbol=${ticker}`),
+    fmpGet<RatingData[]>(`/rating?symbol=${ticker}`),
+    fmpGet<PriceTargetData[]>(`/price-target-consensus?symbol=${ticker}`),
+  ]);
+
+  const reports  = incomeRaw    ?? [];
+  const cashFlow = cashFlowRaw?.[0] ?? {};
+  const profile  = profileRaw?.[0]  ?? {};
+  const rating   = ratingRaw?.[0]   ?? {};
+  const target   = targetRaw?.[0]   ?? {};
+
+  const sector = (profile as any).sector ?? "";
+  const isFinancial = /bank|financ|insurance|capital|invest/i.test(sector);
+
+  if (!reports.length && !profile.mktCap) {
+    console.warn(`FMP: no financial data for ${ticker}`);
+    return null;
+  }
+
+  const revenueHistory = reports.slice(0, 4).map((r, i) => {
+    const year    = r.calendarYear ?? r.date?.slice(0, 4) ?? "N/A";
+    const rev     = r.revenue ?? 0;
+    const prevRev = reports[i + 1]?.revenue ?? 0;
+    const growth  = prevRev
+      ? `${rev > prevRev ? "+" : ""}${(((rev - prevRev) / prevRev) * 100).toFixed(1)}%`
+      : "N/A";
+    return { year, revenue: fmt(rev), growth };
+  }).reverse();
+
+  const latestRev = reports[0]?.revenue ?? 0;
+  const priorRev  = reports[1]?.revenue ?? 0;
+  const yoyGrowth = priorRev
+    ? `${latestRev > priorRev ? "+" : ""}${(((latestRev - priorRev) / priorRev) * 100).toFixed(1)}% YoY`
+    : "N/A";
+
+  const fiscalYear = `FY${reports[0]?.calendarYear ?? reports[0]?.date?.slice(0, 4) ?? new Date().getFullYear()}`;
+
+  const analystRating = rating.ratingDetailsDCFRecommendation
+    ?? rating.ratingDetailsROERecommendation
+    ?? rating.rating
+    ?? "N/A";
+
+  return {
+    ticker,
+    fiscalYear,
+    revenue:         fmt(reports[0]?.revenue),
+    revenueGrowth:   yoyGrowth,
+    netIncome:       fmt(reports[0]?.netIncome),
+    ebitda:          (() => {
+      if (isFinancial) return "N/A (financial sector)";
+      const direct = reports[0]?.ebitda;
+      if (direct != null && direct !== 0) return fmt(direct);
+      const opIncome = reports[0]?.operatingIncome ?? 0;
+      const da       = (cashFlow as CashFlowReport).depreciationAndAmortization ?? 0;
+      return (opIncome || da) ? fmt(opIncome + da) : "N/A";
+    })(),
+    grossMargin:     fmtPct(reports[0]?.grossProfitRatio),
+    operatingMargin: fmtPct(reports[0]?.operatingIncomeRatio),
+    marketCap:       fmt(profile.mktCap),
+    stockPrice:      profile.price != null ? `$${profile.price.toFixed(2)}` : "N/A",
+    peRatio:         profile.pe   != null ? `${profile.pe.toFixed(1)}x`   : "N/A",
+    epsAnnual:       profile.eps  != null ? `$${profile.eps.toFixed(2)}`  : "N/A",
+    analystTarget:   target.priceTarget != null ? `${target.priceTarget.toFixed(2)}` : "N/A",
+    analystRating,
+    employees:       profile.fullTimeEmployees != null
+                       ? profile.fullTimeEmployees.toLocaleString("en-GB")
+                       : null,
+    revenueHistory,
+  };
+}
+
+// ── Step 2b: fetch ESG scores ─────────────────────────────────────────────────
+
+async function fetchFMPESG(ticker: string): Promise<FMPESGData | null> {
+  type ESGRecord = {
+    symbol?: string; companyName?: string;
+    ESGScore?: number; environmentalScore?: number; socialScore?: number; governanceScore?: number;
+    ESGRisk?: string; date?: string;
+  };
+
+  const data = await fmpGet<ESGRecord[]>(`/esg-environmental-social-governance?symbol=${ticker}`);
+  const record = data?.[0];
+
+  if (!record) {
+    console.warn(`FMP ESG: no data for ${ticker}`);
+    return null;
+  }
+
+  const esgScore = record.ESGScore ?? 0;
+  const esgRating = esgScore >= 70 ? "A" : esgScore >= 50 ? "BBB" : esgScore >= 30 ? "BB" : "B";
+
+  console.log(`🌱 FMP ESG for ${ticker}: score=${esgScore}, risk=${record.ESGRisk ?? "N/A"}`);
+
+  return {
+    ticker,
+    companyName:      record.companyName ?? ticker,
+    esgScore,
+    environmentScore: record.environmentalScore ?? 0,
+    socialScore:      record.socialScore       ?? 0,
+    governanceScore:  record.governanceScore    ?? 0,
+    esgRating,
+    esgRisk:          record.ESGRisk ?? "N/A",
+    lastUpdated:      record.date    ?? new Date().toISOString().slice(0, 10),
+  };
+}
+
+// ── Public: full FMP lookup (financials + ESG) ────────────────────────────────
+
+export async function lookupFMP(companyName: string): Promise<{
+  financials: FMPFinancials | null;
+  esg:        FMPESGData    | null;
+}> {
+  const ticker = await resolveFMPTicker(companyName);
+  if (!ticker) return { financials: null, esg: null };
+
+  const [financials, esg] = await Promise.all([
+    fetchFMPFinancials(ticker),
+    fetchFMPESG(ticker),
+  ]);
+
+  return { financials, esg };
+}
+
+// ─── LLM training knowledge fallback ─────────────────────────────────────────
+// When FMP returns no financials (plan limitation), generatePartA handles the
+// LLM fallback directly via the finBlock prompt. No separate function needed.
+
+// ─── Private company web intelligence ────────────────────────────────────────
+// Runs targeted web searches for funding, investors, and key deals when FMP
+// returns no data. Particularly valuable for private/unlisted companies where
+// press releases, Companies House, and PitchBook have the real story.
+
+interface PrivateCompanyIntel {
+  industry:           string | null;  // e.g. "Construction Technology / Commissioning Software"
+  companyDescription: string | null;  // e.g. "Cloud-based commissioning management platform for building projects"
+  fundingTotal:    string | null;  // e.g. "$735M"
+  investors:       string[];       // e.g. ["Infratil (53%)", "Legal & General Capital (32%)"]
+  debtFacilities:  string | null;  // e.g. "£206M Deutsche Bank"
+  keyDeals:        string[];       // e.g. ["22MW AI deal with Nebius"]
+  revenueEstimate: string | null;  // e.g. "$4.6M–$8.6M (estimated)"
+  employees:       string | null;  // e.g. "40–50"
+  rawContext:      string;         // Full text for injection into prompt
+}
+
+async function lookupPrivateCompanyIntel(companyName: string): Promise<PrivateCompanyIntel | null> {
+  try {
+    console.log(`🔎 Private company intel lookup for "${companyName}"...`);
+    const message = await client.messages.create({
+      model: MODEL_GROUNDED,
+      max_tokens: 1200,
+      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      system: `You are a business intelligence researcher. Search for funding, investors, key deals, and financial data for private companies. Return ONLY a valid JSON object. No markdown, no explanation, no code fences.`,
+      messages: [{
+        role: "user",
+        content: `Search the web for "${companyName}" — first establish what this company actually is and does, then find business intelligence. Return this exact JSON (use null for fields you cannot find):
+{
+  "industry": "The company's actual industry/sector based on what you found on their website or reliable sources, e.g. 'Construction Technology / Commissioning Software' or null if genuinely unknown",
+  "companyDescription": "1-2 sentence factual description of what the company does, based on their website or verified sources — NOT inferred from their name. e.g. 'CxAlloy is a cloud-based commissioning management platform used by building engineers and contractors to manage checklists, assets, and reporting.' Return null if you cannot find the company.",
+  "fundingTotal": "Total equity investment received, e.g. $735M or null",
+  "investors": ["Investor name and stake if known, e.g. Infratil (53%)"],
+  "debtFacilities": "Debt raised, lender, and purpose, e.g. £206M Deutsche Bank for European expansion or null",
+  "keyDeals": ["Key contract or partnership, e.g. 22MW AI infrastructure deal with Nebius"],
+  "revenueEstimate": "Revenue estimate from any source, e.g. $4.6M-$8.6M (estimated) or null",
+  "employees": "Headcount estimate, e.g. 40-50 or null",
+  "rawContext": "2-3 sentence summary of the most important business intelligence you found"
+}`
+      }],
+    });
+
+    const raw = message.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map(b => b.text)
+      .join("")
+      .replace(/<cite[^>]*>[\s\S]*?<\/cite>/g, "");
+
+    // Extract the first JSON object regardless of surrounding prose or citations
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn(`🔎 Private intel: no JSON found for "${companyName}". Raw (first 300 chars): ${raw.slice(0, 300)}`);
+      return null;
+    }
+
+    const d = JSON.parse(jsonMatch[0]) as PrivateCompanyIntel;
+    console.log(`🔎 Private intel for "${companyName}": industry=${d.industry}, funding=${d.fundingTotal}, investors=${d.investors?.length ?? 0}, deals=${d.keyDeals?.length ?? 0}`);
+    return d;
+  } catch (err) {
+    console.warn(`Private company intel lookup failed for "${companyName}":`, err);
+    return null;
+  }
+}
+
+// ─── Wikipedia Fallback ───────────────────────────────────────────────────────
+
+function parseInfoboxField(text: string, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const re = new RegExp(`(?:^|\\n)\\s*${key}\\s*[=:]\\s*([^\\n]+)`, "i");
+    const m  = text.match(re);
+    if (m?.[1]) return m[1].trim();
+  }
+  return null;
+}
+
+function cleanWikiValue(val: string | null): string | null {
+  if (!val) return null;
+
+  let s = val;
+
+  // Strip [[File:...]] and [[Image:...]] wikilinks entirely
+  s = s.replace(/\[\[(?:File|Image)[^\]]*\]\]/gi, "");
+
+  // Strip nested {{ }} templates iteratively (handles {{increase}}{{plaintext|{{formatnum:25376}}}} etc.)
+  // Keep stripping innermost {{ }} until none remain
+  let prev = "";
+  while (prev !== s) {
+    prev = s;
+    s = s.replace(/\{\{[^{}]*\}\}/g, (match) => {
+      // Extract the last pipe-delimited segment as the human-readable value
+      // e.g. {{formatnum:25376}} → "25376", {{plaintext|£25.4 billion}} → "£25.4 billion"
+      const inner = match.slice(2, -2);
+      const parts = inner.split("|");
+      const last = parts[parts.length - 1].trim();
+      // If it looks like a bare template name (no digits/currency), drop it
+      return /[\d£$€¥₹]/.test(last) ? last : "";
+    });
+  }
+
+  // Strip wikilinks: [[target|label]] → label, [[target]] → target
+  s = s.replace(/\[\[([^|\]]+)\|([^\]]+)\]\]/g, "$2");
+  s = s.replace(/\[\[([^\]]+)\]\]/g, "$1");
+
+  // Strip citation refs [1], [2], etc.
+  s = s.replace(/\[\d+\]/g, "");
+
+  // Strip HTML tags
+  s = s.replace(/<[^>]+>/g, "");
+
+  // Strip ref tags
+  s = s.replace(/<ref[^/]*/gi, "");
+
+  // Normalise whitespace
+  s = s.replace(/\s+/g, " ").trim();
+
+  return s || null;
+}
+
+export async function lookupWikipedia(companyName: string): Promise<WikipediaData | null> {
+  try {
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(companyName)}&srlimit=3&format=json&origin=*`;
+    const searchRes = await fetch(searchUrl, { headers: { "User-Agent": "1GLInsightsBot/1.0" } });
+    if (!searchRes.ok) return null;
+
+    const searchJson = await searchRes.json() as {
+      query?: { search?: { title: string; snippet: string }[] };
+    };
+    const hits = searchJson.query?.search ?? [];
+    if (!hits.length) return null;
+
+    const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const query = normalise(companyName);
+    const bestHit =
+      hits.find(h => normalise(h.title) === query) ??
+      hits.find(h => normalise(h.title).includes(query)) ??
+      hits[0];
+
+    console.log(`📖 Wikipedia: searching "${companyName}" → matched "${bestHit.title}"`);
+
+    const pageTitle  = encodeURIComponent(bestHit.title.replace(/ /g, "_"));
+    const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${pageTitle}`;
+    const summaryRes = await fetch(summaryUrl, { headers: { "User-Agent": "1GLInsightsBot/1.0" } });
+    if (!summaryRes.ok) return null;
+
+    const summaryJson = await summaryRes.json() as {
+      title?: string;
+      extract?: string;
+      content_urls?: { desktop?: { page?: string } };
+    };
+
+    const extract = summaryJson.extract ?? "";
+
+    const parseUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content&rvslots=main&titles=${pageTitle}&format=json&origin=*`;
+    const parseRes = await fetch(parseUrl, { headers: { "User-Agent": "1GLInsightsBot/1.0" } });
+    let wikitext = "";
+    if (parseRes.ok) {
+      const parseJson = await parseRes.json() as { query?: { pages?: Record<string, { revisions?: { slots?: { main?: { "*"?: string } } }[] }> } };
+      const pages = parseJson.query?.pages ?? {};
+      const page  = Object.values(pages)[0];
+      wikitext    = page?.revisions?.[0]?.slots?.main?.["*"] ?? "";
+    }
+
+    const textToParse = wikitext || extract;
+
+    const founded      = cleanWikiValue(parseInfoboxField(textToParse, "founded", "foundation", "established", "formation"));
+    const headquarters = cleanWikiValue(parseInfoboxField(textToParse, "headquarters", "hq_location", "location_city", "location"));
+    const employees    = cleanWikiValue(parseInfoboxField(textToParse, "num_employees", "employees", "workforce"));
+    const revenue      = cleanWikiValue(parseInfoboxField(textToParse, "revenue", "total_revenue", "income"));
+    const netIncome    = cleanWikiValue(parseInfoboxField(textToParse, "net_income", "profit", "net_profit"));
+    const aum          = cleanWikiValue(parseInfoboxField(textToParse, "aum", "assets_under_management", "assets under management", "AUM"));
+    const totalAssets  = cleanWikiValue(parseInfoboxField(textToParse, "total_assets", "assets"));
+    const website      = cleanWikiValue(parseInfoboxField(textToParse, "website", "url", "homepage"));
+    const parentOrg    = cleanWikiValue(parseInfoboxField(textToParse, "parent", "parent_organization", "owner"));
+
+    console.log(`📖 Wikipedia data for "${companyName}": revenue=${revenue}, employees=${employees}, aum=${aum}`);
+
+    return {
+      title:        bestHit.title,
+      extract:      extract.slice(0, 1500),
+      founded,
+      headquarters,
+      employees,
+      revenue,
+      netIncome,
+      aum,
+      totalAssets,
+      website,
+      parentOrg,
+      source:       "wikipedia",
+    };
+  } catch (err) {
+    console.warn(`Wikipedia lookup failed for "${companyName}":`, err);
+    return null;
+  }
+}
+
+// ─── System Prompt ────────────────────────────────────────────────────────────
+
+const SYSTEM = `ROLE
+You are an elite strategic intelligence analyst specialising in company research, executive intelligence, market positioning, financial analysis, and operational profiling.
+
+OBJECTIVE
+Extract the most accurate, current, and verifiable company intelligence possible and return it as strict machine-parseable JSON.
+
+PRIMARY RULES
+- Respond with ONLY valid JSON.
+- Do NOT output markdown, prose, explanations, notes, or code fences.
+- Output must parse successfully with JSON.parse().
+- Never narrate reasoning or search activity.
+- If data cannot be verified with high confidence, return null for scalars, [] for arrays, {} for objects.
+- Prefer omission over speculation for executive names, acquisition dates, funding amounts, and customer counts.
+- For well-known public companies, use training knowledge to populate financial figures (revenue, netIncome, marketCap, employees) when explicitly instructed — this is not "inventing data", it is applying known facts.
+- Never mix executives between companies.
+- Use concise factual language only.
+- When financial data is supplied in the prompt, treat it as authoritative and use it verbatim.
+
+DATA QUALITY RULES
+- Use real verified data for public and well-known companies.
+- Use directional estimates only for smaller or private companies.
+- CEO and executive names must only be included when highly confident and current.
+- If executive data is uncertain: set "ceo" to "See company website for current CEO".
+- Treat employee counts, revenue, valuation, growth rates, and funding data as time-sensitive.
+- Evaluate sources internally by confidence but NEVER expose that reasoning in output.
+
+MISSING DATA POLICY
+- Unknown scalar values → null
+- Unknown arrays → []
+- Unknown objects → {}
+- Never fabricate: funding amounts, acquisition dates, executive names, office locations, or customer counts.
+- Financial figures (revenue, netIncome, marketCap, employees) for well-known public companies: use training knowledge when explicitly instructed, do not return null.
+- WEB INTELLIGENCE blocks in the prompt contain verified live data — always use them verbatim, they override this policy.
+
+EXECUTIVE VALIDATION RULES
+Before returning any executive name:
+1. Verify they belong to the correct company.
+2. Verify role recency — exclude former executives.
+3. Exclude any name you cannot verify with high confidence.
+4. Never recombine or invent names from partial recall.
+Quality over quantity — 4 accurate entries is better than 8 with errors.
+
+NORMALIZATION RULES
+- Currency default: USD unless the company primarily operates in another currency.
+- Dates format: dd/mm/yyyy.
+- Country names: full official English names.
+- Arrays: maximum 5 items unless the schema specifies otherwise.
+- keyExecutives: maximum 8 verified entries, minimum 3 (or [] if fewer than 3 can be verified).
+- String values: concise and information-dense. No marketing language or hype.
+
+DEDUPLICATION RULES
+- Do not repeat semantically identical facts.
+- Consolidate overlapping descriptions.
+- Avoid repeating the company name excessively.
+
+OUTPUT REQUIREMENTS
+- Return exactly one JSON object.
+- No trailing commas.
+- No comments inside JSON.
+- No additional keys outside the requested schema.
+- Analytical, dense, neutral, executive-grade tone.`;
+
+// ─── last30days enrichment ────────────────────────────────────────────────────
+
+async function runLast30Days(companyName: string): Promise<string | null> {
+  const skillDir = [
+    process.env.LAST30DAYS_SKILL_PATH,
+    path.resolve(process.cwd(), "tools", "last30days"),
+    path.join(process.env.HOME ?? "/root", ".agents", "skills", "last30days", "scripts"),
+  ].filter((p): p is string => Boolean(p)).find(fsExistsSync);
+
+  if (!skillDir) {
+    console.warn("📡 last30days: engine not installed — run scripts/install-last30days.sh");
+    return null;
+  }
+  const scriptPath = path.join(skillDir, "last30days.py");
+
+  try {
+    const { stdout } = await execFileAsync(
+      "python3",
+      [scriptPath, "--emit=context", "--quick", "--", companyName],
+      { timeout: 75_000, env: { ...process.env }, maxBuffer: 1024 * 1024 }
+    );
+    const result = stdout.trim();
+    const clusterSection = result.split("Top clusters:")[1] ?? "";
+    const noEvidence = !result || result.includes("No candidates survived") || !/^- /m.test(clusterSection);
+    if (noEvidence) {
+      console.warn(`📡 last30days: no usable evidence for "${companyName}" — skipping enrichment`);
+      return null;
+    }
+    console.log(`📡 last30days: enrichment fetched for "${companyName}" (${result.length} chars)`);
+    return result;
+  } catch (err: any) {
+    const reason = err.code === "ENOENT" ? "python3 not found" : err.killed ? "timed out after 75s" : err.message?.slice(0, 80);
+    console.warn(`📡 last30days: skipped for "${companyName}" — ${reason}`);
+    return null;
+  }
+}
+
+// ─── CEO lookup via web search ────────────────────────────────────────────────
 
 async function lookupCEO(companyName: string): Promise<string> {
   try {
@@ -42,7 +635,6 @@ async function lookupCEO(companyName: string): Promise<string> {
       .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/g, "$1")
       .trim();
 
-    // Should be just a name — reject if it looks like prose
     if (text && text.length < 80 && !text.includes("{") && !text.includes("\n")) {
       return text;
     }
@@ -52,32 +644,69 @@ async function lookupCEO(companyName: string): Promise<string> {
   return "See company website for current CEO";
 }
 
-// ─── Fast caller (Haiku, no tools) — used for Part B ─────────────────────────
+// ─── Core caller (Haiku, no tools) ───────────────────────────────────────────
 
 async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
-  const message = await client.messages.create({
-    model: MODEL_FAST,
-    max_tokens: maxTokens,
-    system: SYSTEM,
-    messages: [{ role: "user", content: prompt }],
-  });
+  // Retry up to 3 times on rate limits, respecting the retry-after header
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const message = await client.messages.create({
+        model: MODEL_FAST,
+        max_tokens: maxTokens,
+        system: SYSTEM,
+        messages: [{ role: "user", content: prompt }],
+      });
 
-  if (message.stop_reason === "max_tokens") {
-    console.error(`Response truncated at ${maxTokens} tokens — increase max_tokens`);
-    throw new Error("Response was too long and got cut off. Please try again.");
+      if (message.stop_reason === "max_tokens") {
+        console.error(`Response truncated at ${maxTokens} tokens — increase max_tokens`);
+        throw new Error("Response was too long and got cut off. Please try again.");
+      }
+
+      const text = message.content[0].type === "text" ? message.content[0].text : "";
+      if (!text) throw new Error("Empty response from Claude API");
+
+      const cleaned = text.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
+
+      try {
+        return JSON.parse(cleaned);
+      } catch (firstErr) {
+        try {
+          let repaired = cleaned;
+          let inString = false;
+          let escape = false;
+          const stack: string[] = [];
+          for (const ch of repaired) {
+            if (escape) { escape = false; continue; }
+            if (ch === '\\' && inString) { escape = true; continue; }
+            if (ch === '"') { inString = !inString; continue; }
+            if (!inString) {
+              if (ch === '{') stack.push('}');
+              else if (ch === '[') stack.push(']');
+              else if ((ch === '}' || ch === ']') && stack.length) stack.pop();
+            }
+          }
+          repaired = repaired.replace(/,\s*$/, "").replace(/"[^"]*$/, '"..."}');
+          repaired += stack.reverse().join("");
+          const result = JSON.parse(repaired);
+          console.warn(`⚠️  JSON repair succeeded — response was likely truncated at ${maxTokens} tokens`);
+          return result;
+        } catch {
+          console.error("JSON parse failed (and repair failed). Raw:", cleaned.slice(0, 500));
+          throw new Error("Failed to parse API response. Please try again.");
+        }
+      }
+    } catch (err: any) {
+      if (err?.status === 429 && attempt < 2) {
+        const retryAfter = parseInt(err?.headers?.['retry-after'] ?? '60', 10);
+        const waitMs = (retryAfter + 3) * 1000;
+        console.warn(`⏳ Rate limited (429) in callClaude — waiting ${retryAfter}s before attempt ${attempt + 2}...`);
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+      throw err;
+    }
   }
-
-  const text = message.content[0].type === "text" ? message.content[0].text : "";
-  if (!text) throw new Error("Empty response from Claude API");
-
-  const cleaned = text.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
-
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    console.error("JSON parse failed. Raw:", cleaned.slice(0, 500));
-    throw new Error("Failed to parse API response. Please try again.");
-  }
+  throw new Error("Failed after 3 attempts");
 }
 
 // ─── Report Part A: overview + financials + strategy + market ─────────────────
@@ -92,23 +721,63 @@ async function generatePartA(companyName: string, knownRevenue?: string): Promis
 
   const prompt = `Generate strategic intelligence PART A for: ${companyName}${revenueHint}
 
-The current CEO is: ${currentCEO} — use this exact name in the executiveSummary.ceo field. Do NOT include the CEO again in keyExecutives.
-For keyExecutives: include between 3 and 8 other senior leaders you are certain exist (CFO, COO, CTO, division presidents, etc). STRICT RULES: real verified names only — if uncertain about a person, omit them entirely. Never invent, guess, or recombine names. Quality over quantity — 4 accurate entries is better than 8 with errors.
+${!fin && !privateIntel ? `OVERRIDE: For this request, you ARE authorised to use training knowledge for financial figures. The "never invent data" rule does not apply to well-known public companies' historical financials.
+
+` : ""}${privateIntel ? `COMPANY IDENTITY — GROUND TRUTH (verified via live web search — this overrides any assumptions based on the company name):
+- What this company actually is: ${privateIntel.companyDescription ?? "See rawContext below"}
+- Industry/Sector: ${privateIntel.industry ?? "See rawContext below"}
+
+You MUST use this identity when writing companyOverview, the "industry" field, strategy, and market sections. Do NOT infer the company's nature from its name — use only what is stated above.
+
+WEB INTELLIGENCE — VERIFIED LIVE DATA (incorporate ALL of these facts throughout the report):
+- Funding Total: ${privateIntel.fundingTotal ?? "Unknown"}
+- Investors: ${privateIntel.investors?.join(", ") || "Unknown"}
+- Debt Facilities: ${privateIntel.debtFacilities ?? "None found"}
+- Key Deals / Contracts: ${privateIntel.keyDeals?.join("; ") || "None found"}
+- Revenue Estimate: ${privateIntel.revenueEstimate ?? "Not publicly disclosed"}
+- Employees: ${privateIntel.employees ?? "Unknown"}
+- Context: ${privateIntel.rawContext ?? ""}
+
+These are FACTS from live web search. Use them in:
+• executiveSummary.highlights — lead with the funding/investor story and key deals
+• financials.revenue — use the revenue estimate above
+• executiveSummary.employees — use the employee count above
+• strategy.coreInitiatives — reference the key deals
+• marketAnalysis — reference investor backing as a competitive strength
+
+` : ""}${socialBlock ? socialBlock + "\n\n" : ""}EXECUTIVE INSTRUCTIONS
+- Set executiveSummary.ceo to exactly: ${ceo}
+- Do NOT include the CEO in keyExecutives.
+- keyExecutives: 3–8 other verified senior leaders (CFO, COO, CTO, division presidents). Real names only. Omit anyone you cannot verify. Never invent or recombine names.
+
+STRATEGY INSTRUCTIONS
+- vision and mission must be populated for all well-known public companies — this data is always available in annual reports, investor relations pages, or company websites.
+- Never return "" (empty string) for vision or mission. Use the company's actual stated purpose, tagline, or strategic intent.
+- For financial institutions specifically: Barclays purpose → "Deploying finance responsibly to support people and businesses acting with empathy and integrity"; HSBC purpose → "Opening up a world of opportunity"; Lloyds → "Helping Britain Prosper"; JPMorgan → "Making dreams possible for everyone everywhere".
+- For tech: Apple → "To make the best products on earth"; Microsoft → "To empower every person and organisation on the planet to achieve more"; Google → "To organise the world's information and make it universally accessible".
+- If the exact statement is uncertain, derive a concise purpose statement from the company's known business model, market position, and sector — do not leave blank.
+- For any company you know enough about to generate a report, you know enough to write a one-sentence vision and mission. Treat these as required fields.
+- Only return null for genuinely unknown private companies where you have minimal information.
+
+${finBlock}
+${wikiContextBlock}
 
 Return ONLY this JSON:
 {
   "companyName": "Official company name",
   "industry": "Primary industry sector",
+  "website": "e.g. https://www.barclays.com or null",
   "executiveSummary": {
     "companyOverview": "2-3 sentence overview",
     "headquarters": "City, Country",
-    "founded": "Year",
-    "employees": "e.g. 250,000",
+    "founded": "Year or null",
+    "employees": "e.g. 250,000 or null",
     "ceo": "Full name",
     "keyExecutives": [{"name": "Name", "title": "Title"}, {"name": "Name", "title": "Title"}, {"name": "Name", "title": "Title"}],
-    "stockExchange": "e.g. NYSE: AAPL or N/A if private",
+    "website": "e.g. https://www.hsbc.com or null",
+    "stockExchange": "e.g. NYSE: AAPL or null if private",
     "highlights": ["Key highlight 1", "Key highlight 2", "Key highlight 3", "Key highlight 4"],
-    "analystRating": "e.g. Buy / Overweight / Hold",
+    "analystRating": "e.g. Buy / Overweight / Hold or null",
     "lastUpdated": "Today dd/mm/yyyy"
   },
   "financials": {
@@ -132,20 +801,20 @@ Return ONLY this JSON:
       {"year": "2023", "revenue": "$X.XB", "growth": "+X%"},
       {"year": "2024", "revenue": "$X.XB", "growth": "+X%"}
     ],
-    "outlook": "2-sentence financial outlook"
+    "outlook": "2-sentence financial outlook or null"
   },
   "strategy": {
-    "vision": "Company vision statement",
-    "mission": "Company mission statement",
+    "vision": "Company's stated vision or purpose — never empty string, use null only if genuinely undiscoverable",
+    "mission": "Company's stated mission or strategic purpose — never empty string, use null only if genuinely undiscoverable",
     "coreInitiatives": [{"title": "Initiative name", "description": "Brief description", "timeline": "e.g. 2024-2026"}],
     "geographicFocus": ["Region 1", "Region 2", "Region 3"],
-    "mAndA": "M&A strategy description",
-    "capitalAllocation": "Capital allocation priorities",
+    "mAndA": "M&A strategy description or null",
+    "capitalAllocation": "Capital allocation priorities or null",
     "summary": "2-3 sentence strategy summary"
   },
   "marketAnalysis": {
-    "totalAddressableMarket": "e.g. $2.1T",
-    "marketShare": "e.g. 18.5%",
+    "totalAddressableMarket": "e.g. $2.1T or null",
+    "marketShare": "e.g. 18.5% or null",
     "marketPosition": "e.g. Market leader / Strong #2",
     "competitors": [{"name": "Competitor name", "strength": "Brief strength", "threat": "high|medium|low"}],
     "customerSegments": ["Segment 1", "Segment 2", "Segment 3"],
@@ -159,36 +828,82 @@ Return ONLY this JSON:
   }
 }`;
 
-  return callClaude(prompt, 5000); // ← fast Haiku; CEO already resolved via lookupCEO()
+  return callClaude(prompt, 8000);
 }
 
 
 // ─── Report Part B: tech + ESG + SWOT + growth + risk + digital ──────────────
 
-async function generatePartB(companyName: string): Promise<unknown> {
+async function generatePartB(companyName: string, esgData?: FMPESGData | null, socialContext?: string | null, privateIntel?: PrivateCompanyIntel | null): Promise<unknown> {
+  const esgBlock = esgData
+    ? `VERIFIED ESG DATA (Financial Modeling Prep — use verbatim, do not alter):
+- ESG Rating:          ${esgData.esgRating}
+- ESG Score:           ${esgData.esgScore.toFixed(1)} / 100
+- ESG Risk Level:      ${esgData.esgRisk}
+- Environmental Score: ${esgData.environmentScore.toFixed(1)} / 100
+- Social Score:        ${esgData.socialScore.toFixed(1)} / 100
+- Governance Score:    ${esgData.governanceScore.toFixed(1)} / 100
+- Data as of:          ${esgData.lastUpdated}
+
+Use ALL values verbatim in the esg object. Set overallRating to "${esgData.esgRating} (FMP)". Do not substitute estimates for any provided field.`
+    : `No verified ESG data from Financial Modeling Prep (common for non-US-listed companies).
+Use your training knowledge to populate the ESG fields. For large, publicly reported companies (FTSE 100, Euro Stoxx 50, etc.) you will have good data on:
+- Published ESG ratings from MSCI, Sustainalytics, or CDP (use these for overallRating, e.g. "A (MSCI)")
+- Net Zero targets, environmental commitments, and governance practices from annual/sustainability reports
+- Board diversity figures from corporate governance disclosures
+- ESG risk assessments from major rating agencies
+Fill in every field you can substantiate. Only return null for fields where you genuinely have no basis for an estimate — not as a precautionary default.`;
+
+  const socialBlock = socialContext
+    ? `CURRENT INTELLIGENCE — LAST 30 DAYS (Reddit, X, YouTube, Hacker News, GitHub, Polymarket):
+${socialContext}
+
+Use this real-time signal to strengthen: swot (opportunities and threats especially), riskAssessment.risks, growthOpportunities.opportunities, digitalTransformation. Prioritise recent facts over training-data assumptions where they conflict. Do not fabricate sources or citations.`
+    : "";
+
+  // Identity grounding — same ground-truth block as Part A, prevents Part B from
+  // pattern-matching on the company name for SWOT / growth / risk sections.
+  const identityBlock = (privateIntel?.industry || privateIntel?.companyDescription)
+    ? `COMPANY IDENTITY — GROUND TRUTH (verified via live web search — this overrides any assumptions based on the company name):
+- What this company actually is: ${privateIntel?.companyDescription ?? "Not specified — rely on the industry/sector below"}
+- Industry/Sector: ${privateIntel?.industry ?? "Not specified — rely on the description above"}
+
+You MUST use this identity when writing swot, growthOpportunities, riskAssessment, and digitalTransformation. Do NOT infer the company's nature from its name.
+
+`
+    : "";
+
   const prompt = `Generate strategic intelligence PART B for: ${companyName}
+
+${identityBlock}${socialBlock ? socialBlock + "\n\n" : ""}${esgBlock}
 
 Return ONLY this JSON:
 {
   "techSpend": {
-    "annualITBudget": "e.g. $4.2B",
-    "itBudgetAsPercentRevenue": "e.g. 4.8%",
+    "annualITBudget": "e.g. $4.2B or null",
+    "itBudgetAsPercentRevenue": "e.g. 4.8% or null",
     "cloudPlatforms": ["AWS", "Azure", "GCP"],
     "keyVendors": [{"vendor": "Vendor name", "category": "Category", "relationship": "Strategic partner / key vendor / etc"}],
-    "dataInfrastructure": "Description of data infrastructure",
-    "securityPosture": "Description of security approach",
+    "dataInfrastructure": "Description or null",
+    "securityPosture": "Description or null",
     "emergingTech": ["AI/ML", "Blockchain", "IoT"],
     "summary": "2-3 sentence tech summary"
   },
   "esg": {
-    "overallRating": "e.g. AA (MSCI) / Strong",
-    "netZeroTarget": "e.g. 2030 / 2050 / Not committed",
+    "overallRating": "e.g. A (FMP) or null",
+    "overallScore": "e.g. 72.4 / 100 or null",
+    "esgRisk": "e.g. Low / Medium / High or null",
+    "environmentScore": "e.g. 68.1 / 100 or null",
+    "socialScore": "e.g. 75.2 / 100 or null",
+    "governanceScore": "e.g. 71.0 / 100 or null",
+    "governanceRating": "e.g. Strong / Moderate / Weak or null",
+    "boardDiversity": "e.g. 40% female representation or null",
+    "netZeroTarget": "e.g. 2030 / 2050 / Not committed or null",
     "environmentalInitiatives": ["Initiative 1", "Initiative 2"],
     "socialInitiatives": ["Initiative 1", "Initiative 2"],
-    "governanceRating": "e.g. Strong / Average",
-    "boardDiversity": "e.g. 45% diverse board members",
     "esgRisks": ["Risk 1", "Risk 2"],
-    "summary": "2-3 sentence ESG summary"
+    "dataSource": "Financial Modeling Prep",
+    "summary": "2-3 sentence ESG summary incorporating rating, risk level, pillar scores, and key risks"
   },
   "swot": {
     "strengths": [
@@ -219,12 +934,12 @@ Return ONLY this JSON:
       {
         "title": "Opportunity title",
         "description": "Detailed description",
-        "potentialValue": "e.g. $50-100B",
+        "potentialValue": "e.g. $50-100B or null",
         "timeframe": "e.g. 2025-2027",
         "confidence": "high|medium|low"
       }
     ],
-    "totalOpportunityValue": "e.g. $200-400B across identified opportunities",
+    "totalOpportunityValue": "e.g. $200-400B across identified opportunities or null",
     "summary": "2-3 sentence growth summary"
   },
   "riskAssessment": {
@@ -245,17 +960,84 @@ Return ONLY this JSON:
     "maturityLevel": "leading|advanced|developing|early",
     "maturityScore": 8,
     "keyInitiatives": [{"title": "Initiative", "description": "Description", "status": "live|in_progress|planned"}],
-    "aiAdoption": "Description of AI adoption",
-    "dataStrategy": "Description of data strategy",
+    "aiAdoption": "Description or null",
+    "dataStrategy": "Description or null",
     "challenges": ["Challenge 1", "Challenge 2"],
     "summary": "2-3 sentence DX summary"
   }
 }`;
 
-  return callClaude(prompt, 5000); // ← fast: Haiku, no web search needed
+  return callClaude(prompt, 8000);
 }
 
-// ─── Public: generate full report (parallel) ──────────────────────────────────
+// ─── Confidence scoring ───────────────────────────────────────────────────────
+
+function computeConfidence(
+  partA: any,
+  partB: any,
+  fmpFinancials: import("./claude.js").FMPFinancials | null,
+  fmpESG: import("./claude.js").FMPESGData | null,
+  ceo: string,
+  wikiData?: WikipediaData | null,
+): { rating: "green" | "amber" | "red"; score: number; signals: { label: string; status: "pass" | "warn" | "fail" }[]; summary: string } {
+
+  const signals: { label: string; status: "pass" | "warn" | "fail" }[] = [];
+
+  if (fmpFinancials) {
+    signals.push({ label: "Financial data (FMP)", status: "pass" });
+    signals.push({ label: "Employees (FMP)", status: fmpFinancials.employees ? "pass" : "warn" });
+    signals.push({ label: "Revenue history", status: (fmpFinancials.revenueHistory?.length ?? 0) >= 3 ? "pass" : "warn" });
+    signals.push({ label: "Market cap", status: fmpFinancials.marketCap && fmpFinancials.marketCap !== "N/A" ? "pass" : "warn" });
+  } else if (wikiData?.revenue || wikiData?.aum) {
+    signals.push({ label: "Financial data (Wikipedia)", status: "warn" });
+    signals.push({ label: "Employees (Wikipedia)", status: wikiData?.employees ? "warn" : "fail" });
+    signals.push({ label: "Revenue history", status: "warn" });
+    signals.push({ label: "Market cap", status: "warn" });
+  } else {
+    signals.push({ label: "Financial data", status: "fail" });
+    signals.push({ label: "Employees", status: "fail" });
+    signals.push({ label: "Revenue history", status: "fail" });
+    signals.push({ label: "Market cap", status: "warn" });
+  }
+
+  const ceoOk = ceo && ceo !== "See company website for current CEO";
+  signals.push({ label: "CEO verified", status: ceoOk ? "pass" : "warn" });
+  signals.push({ label: "ESG data (FMP)", status: fmpESG ? "pass" : "warn" });
+
+  const vision  = partA?.strategy?.vision;
+  const mission = partA?.strategy?.mission;
+  signals.push({ label: "Vision / Mission", status: (vision && vision !== "" && mission && mission !== "") ? "pass" : "warn" });
+  signals.push({ label: "Company website", status: partA?.website || partA?.executiveSummary?.website ? "pass" : "warn" });
+
+  const execCount = partA?.executiveSummary?.keyExecutives?.length ?? 0;
+  signals.push({ label: "Key executives", status: execCount >= 3 ? "pass" : execCount > 0 ? "warn" : "fail" });
+
+  const swotOk = (partB?.swot?.strengths?.length ?? 0) >= 2;
+  signals.push({ label: "SWOT analysis", status: swotOk ? "pass" : "warn" });
+
+  const risksOk = (partB?.riskAssessment?.risks?.length ?? 0) >= 2;
+  signals.push({ label: "Risk assessment", status: risksOk ? "pass" : "warn" });
+
+  const maxScore = signals.length * 10;
+  const score    = Math.round(
+    (signals.reduce((acc, s) => acc + (s.status === "pass" ? 10 : s.status === "warn" ? 5 : 0), 0) / maxScore) * 100
+  );
+
+  const fails  = signals.filter(s => s.status === "fail").length;
+  const warns  = signals.filter(s => s.status === "warn").length;
+  const rating: "green" | "amber" | "red" =
+    fails > 0 || score < 40  ? "red"   :
+    warns > 2  || score < 70 ? "amber" : "green";
+
+  const summary =
+    rating === "green" ? "High confidence — verified data across all key sections." :
+    rating === "amber" ? `Moderate confidence — ${warns} section(s) could not be fully verified.` :
+    `Low confidence — significant data gaps detected. Treat with caution.`;
+
+  return { rating, score, signals, summary };
+}
+
+// ─── Public: generate full report ─────────────────────────────────────────────
 
 export async function generateReport(companyName: string, knownRevenue?: string): Promise<unknown> {
   const start = Date.now();
@@ -265,9 +1047,97 @@ export async function generateReport(companyName: string, knownRevenue?: string)
   const partA = await generatePartA(companyName, knownRevenue);
   const partB = await generatePartB(companyName);
 
-  console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (CEO lookup + Haiku x2)`);
+  // Sanitise LLM financial output — reject ranges and USD for known UK companies
+  const partATyped = partA as any;
+  if (partATyped?.financials) {
+    const f = partATyped.financials;
+    // If revenue contains a range (–) or em dash, strip to first value
+    if (typeof f.revenue === 'string' && (f.revenue.includes('–') || f.revenue.includes('-'))) {
+      const first = f.revenue.split(/[–-]/)[0].trim();
+      console.warn(`⚠️  Revenue range detected ("${f.revenue}") — using first value: "${first}"`);
+      f.revenue = first;
+    }
+    if (typeof f.employees === 'string' && (f.employees.includes('–') || f.employees.includes('-') || f.employees.includes('+'))) {
+      const first = f.employees.split(/[–\-+]/)[0].replace(/[^0-9,]/g, '').trim();
+      if (first) {
+        console.warn(`⚠️  Employees range detected ("${f.employees}") — using first value: "${first}"`);
+        f.employees = first;
+      }
+    }
+    // Warn if revenue history is too short
+    const histLen = Array.isArray(f.revenueHistory) ? f.revenueHistory.length : 0;
+    if (histLen < 2) {
+      console.warn(`⚠️  Revenue history only ${histLen} entr${histLen === 1 ? 'y' : 'ies'} for ${companyName} — chart will be sparse`);
+    }
+  }
 
-  return { ...(partA as object), ...(partB as object) };
+  const confidence = computeConfidence(partA, partB, financials, fmpData.esg, currentCEO, wikiData);
+
+  const financialsMeta: FinancialsMetadata = (() => {
+    const now = new Date().toISOString().slice(0, 10);
+    if (fmpData.financials) {
+      return { source: "FMP", confidence: "verified", fiscalYear: fmpData.financials.fiscalYear, retrievedAt: now };
+    }
+    if (financials) {
+      // Should not reach here currently (FMP plan limitation means financials is always null for non-US)
+      // Kept for when FMP plan is upgraded
+      return { source: "FMP" as const, confidence: "single-source" as const, fiscalYear: financials.fiscalYear, retrievedAt: now };
+    }
+    if (wikiData?.revenue || wikiData?.aum || wikiData?.netIncome) {
+      return {
+        source:      "Wikipedia",
+        confidence:  "wikipedia",
+        fiscalYear:  null,
+        retrievedAt: now,
+      };
+    }
+    // LLM training knowledge — check what was actually returned
+    const partATyped2 = partA as any;
+    const llmRevenue = partATyped2?.financials?.revenue;
+    // Revenue is present if it's a non-empty string that isn't null/N/A
+    const llmHasData2 = llmRevenue != null
+      && llmRevenue !== null
+      && llmRevenue !== 'null'
+      && llmRevenue !== 'N/A'
+      && llmRevenue !== ''
+      && typeof llmRevenue === 'string';
+    console.log(`🧠 LLM financials check: revenue=${JSON.stringify(llmRevenue)}, hasData=${llmHasData2}`);
+    return {
+      source:      "LLM" as const,
+      confidence:  llmHasData2 ? "estimated" as const : "unavailable" as const,
+      fiscalYear:  partATyped2?.financials?.fiscalYear ?? null,
+      retrievedAt: now,
+    };
+  })();
+
+  // Numeric sanity checks
+  if (financialsMeta.source === "FMP" && financials) {
+    const revHistory = financials.revenueHistory;
+    if (revHistory.length >= 2) {
+      for (let i = 0; i < revHistory.length - 1; i++) {
+        const curr = parseFloat(revHistory[i].revenue.replace(/[^0-9.]/g, ""));
+        const prev = parseFloat(revHistory[i + 1].revenue.replace(/[^0-9.]/g, ""));
+        if (prev > 0 && curr > 0) {
+          const change = Math.abs((curr - prev) / prev);
+          if (change > 3) {
+            console.warn(`⚠️  Sanity: implausible revenue swing for ${companyName} (${revHistory[i+1].year}→${revHistory[i].year}: ${(change*100).toFixed(0)}%)`);
+            financialsMeta.confidence = "single-source";
+          }
+        }
+      }
+    }
+  }
+
+  // Strip orphaned IT budget % only when truly no data at all
+  if (financialsMeta.confidence === "unavailable") {
+    const techSpend = (partB as any)?.techSpend;
+    if (techSpend?.itBudgetAsPercentRevenue) {
+      console.log(`🧹 Stripping orphaned itBudgetAsPercentRevenue (no verified revenue for ${companyName})`);
+      techSpend.itBudgetAsPercentRevenue = null;
+    }
+  }
+
+  return { ...(partA as object), ...(partB as object), confidence, _financialsMeta: financialsMeta };
 }
 
 // ─── Sales Enablement ─────────────────────────────────────────────────────────
@@ -315,7 +1185,7 @@ Return ONLY this JSON:
   ]
 }`;
 
-  return callClaude(prompt, 4000);
+  return callClaude(prompt, 5000);
 }
 
 // ─── City Company Search ──────────────────────────────────────────────────────

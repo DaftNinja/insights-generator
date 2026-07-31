@@ -8,8 +8,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    const error: any = new Error(err.error ?? `Request failed: ${res.status}`);
+    const err = await res.json().catch(() => ({ error: `Request failed: ${res.status}` }));
+    const message = typeof err.error === 'string' && err.error
+      ? err.error
+      : `Request failed: ${res.status}`;
+    const error: any = new Error(message);
     error.status = res.status;
     error.data = err;
     throw error;

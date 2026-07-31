@@ -166,14 +166,27 @@ export const ExecutiveSummarySchema = z.object({
   ceo: z.string(),
   keyExecutives: z.array(z.object({ name: z.string(), title: z.string() })),
   stockExchange: z.string().optional(),
+  website: z.string().nullable().optional(),
   highlights: z.array(z.string()),
   analystRating: z.string(),
   lastUpdated: z.string(),
 });
 
+
+export const ConfidenceSchema = z.object({
+  rating:  z.enum(["green", "amber", "red"]),
+  score:   z.number().min(0).max(100),
+  signals: z.array(z.object({
+    label:  z.string(),
+    status: z.enum(["pass", "warn", "fail"]),
+  })),
+  summary: z.string(),
+});
 export const ReportDataSchema = z.object({
   companyName: z.string(),
   industry: z.string(),
+  website: z.string().nullable().optional(),
+  confidence: ConfidenceSchema.optional(),
   executiveSummary: ExecutiveSummarySchema,
   financials: FinancialsSchema,
   strategy: StrategySchema,
@@ -208,6 +221,7 @@ export type InsertUser = typeof users.$inferInsert;
 export type SigninToken = typeof signinTokens.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type ReportData = z.infer<typeof ReportDataSchema>;
+export type Confidence = z.infer<typeof ConfidenceSchema>;
 export type SalesEnablement = z.infer<typeof SalesEnablementSchema>;
 export type ExecutiveSummary = z.infer<typeof ExecutiveSummarySchema>;
 export type Financials = z.infer<typeof FinancialsSchema>;
