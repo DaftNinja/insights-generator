@@ -3,7 +3,7 @@
 Extracts cookies from local browser databases (Firefox, Chrome, Brave, Safari)
 to enable zero-config authentication for services like X/Twitter.
 
-Only uses Python stdlib — no external dependencies.
+Only uses Python stdlib - no external dependencies.
 """
 
 import configparser
@@ -61,7 +61,7 @@ def _get_firefox_profiles_dir() -> Optional[Path]:
     elif system == "Linux":
         path = Path.home() / ".mozilla" / "firefox"
     else:
-        # Windows: %APPDATA%\Mozilla\Firefox — best-effort
+        # Windows: %APPDATA%\Mozilla\Firefox - best-effort
         appdata = Path.home() / "AppData" / "Roaming" / "Mozilla" / "Firefox"
         path = appdata
     return path if path.is_dir() else None
@@ -151,7 +151,7 @@ def _query_cookies_db(
 
         conn = sqlite3.connect(tmp_path)
         try:
-            # Build parameterized query — SQLite doesn't support array params,
+            # Build parameterized query - SQLite doesn't support array params,
             # so we build the IN clause with individual placeholders.
             placeholders = ",".join("?" for _ in cookie_names)
             query = (
@@ -238,7 +238,7 @@ def extract_chrome_cookies(
 ) -> Optional[Dict[str, str]]:
     """Extract cookies from Chrome for the given domain and cookie names.
 
-    macOS only — uses Keychain + system openssl for AES-128-CBC decryption.
+    macOS only - uses Keychain + system openssl for AES-128-CBC decryption.
     Linux/Windows not supported (Chrome uses platform-specific encryption).
 
     Returns:
@@ -260,7 +260,7 @@ def extract_brave_cookies(
 ) -> Optional[Dict[str, str]]:
     """Extract cookies from Brave for the given domain and cookie names.
 
-    macOS only — Brave uses the same v10 AES-128-CBC encryption as Chrome,
+    macOS only - Brave uses the same v10 AES-128-CBC encryption as Chrome,
     with a different DB path and Keychain service name ("Brave Safe Storage").
     Tries the Default profile first, then scans numbered Profile directories.
 
@@ -283,7 +283,7 @@ def extract_safari_cookies(
 ) -> Optional[Dict[str, str]]:
     """Extract cookies from Safari for the given domain and cookie names.
 
-    macOS only — parses the unencrypted binary cookie file.
+    macOS only - parses the unencrypted binary cookie file.
 
     Returns:
         Dict of {cookie_name: cookie_value} or None if extraction fails.

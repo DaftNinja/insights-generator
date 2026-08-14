@@ -94,7 +94,7 @@ def search_hackernews(
     _log(f"Searching for '{core_flat}' (raw: '{topic}', since {from_date}, count={count})")
 
     # Use relevance-sorted search with minimum engagement filter.
-    # NOTE: restrictSearchableAttributes=title omitted intentionally — it would
+    # NOTE: restrictSearchableAttributes=title omitted intentionally - it would
     # miss Ask HN/Show HN threads where the topic appears in the body.
     params = {
         "query": core_flat,

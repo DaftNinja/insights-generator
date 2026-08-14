@@ -1,6 +1,6 @@
 import { Resend } from "resend";
 
-// Sender — default uses the verified contact@1giglabs.com address.
+// Sender - default uses the verified contact@1giglabs.com address.
 // Override with RESEND_FROM if needed.
 const FROM = process.env.RESEND_FROM ?? "1GigLabs <contact@1giglabs.com>";
 const APP_URL = process.env.APP_URL ?? "https://insights-generator-production.up.railway.app";
@@ -8,7 +8,7 @@ const APP_URL = process.env.APP_URL ?? "https://insights-generator-production.up
 function getResend(): Resend {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
-    console.warn("⚠️  RESEND_API_KEY not set — emails will be logged only");
+    console.warn("⚠️  RESEND_API_KEY not set - emails will be logged only");
     return {
       emails: {
         send: async (opts: any) => {

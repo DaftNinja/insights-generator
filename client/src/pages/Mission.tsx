@@ -42,7 +42,7 @@ const TIMELINE = [
   {
     tag: "PRESENTATION",
     title: "Investor Presentation Generator",
-    desc: "Built a branded, 8-slide investor presentation generator with one-click PowerPoint export — turning raw analysis into boardroom-ready materials.",
+    desc: "Built a branded, 8-slide investor presentation generator with one-click PowerPoint export - turning raw analysis into boardroom-ready materials.",
     color: "border-violet-200 bg-violet-50/50",
     tagColor: "text-violet-600",
   },
@@ -55,7 +55,7 @@ const PERSONAS = [
     icon: "↗",
     iconBg: "bg-blue-50 text-blue-600",
     title: "Investors & Analysts",
-    desc: "Equity research reports, due diligence packs, and competitive benchmarking typically require teams of analysts working for weeks. Our platform delivers institutional-grade strategic analysis — covering financials, SWOT, ESG, risk, and growth opportunities — in a single request.",
+    desc: "Equity research reports, due diligence packs, and competitive benchmarking typically require teams of analysts working for weeks. Our platform delivers institutional-grade strategic analysis - covering financials, SWOT, ESG, risk, and growth opportunities - in a single request.",
     tradCost: "$3,000 – $8,000",
     tradTime: "2 – 4 weeks",
     platformTime: "Minutes",
@@ -71,7 +71,7 @@ const PERSONAS = [
     icon: "○",
     iconBg: "bg-violet-50 text-violet-600",
     title: "Researchers & Consultants",
-    desc: "Market research firms charge thousands per report. Strategy consultants bill hundreds per hour for the same analysis. Our platform compresses weeks of desk research, data gathering, and report writing into a single automated workflow — without sacrificing depth.",
+    desc: "Market research firms charge thousands per report. Strategy consultants bill hundreds per hour for the same analysis. Our platform compresses weeks of desk research, data gathering, and report writing into a single automated workflow - without sacrificing depth.",
     tradCost: "$5,000 – $15,000",
     tradTime: "3 – 6 weeks",
     platformTime: "Minutes",
@@ -87,7 +87,7 @@ const PERSONAS = [
     icon: "⚇",
     iconBg: "bg-emerald-50 text-emerald-600",
     title: "Sales Teams",
-    desc: "Sales professionals spend hours researching prospects before outreach. Contact enrichment tools charge per-seat monthly fees. Our platform combines deep company intelligence with contact discovery — giving your team the strategic context they need to have meaningful conversations from the first touchpoint.",
+    desc: "Sales professionals spend hours researching prospects before outreach. Contact enrichment tools charge per-seat monthly fees. Our platform combines deep company intelligence with contact discovery - giving your team the strategic context they need to have meaningful conversations from the first touchpoint.",
     tradCost: "$50 – $200 / user / month",
     tradTime: "Hours per prospect",
     platformTime: "Seconds",
@@ -103,7 +103,7 @@ const PERSONAS = [
     icon: "◧",
     iconBg: "bg-amber-50 text-amber-600",
     title: "Marketing Professionals",
-    desc: "Competitive analysis, market sizing, and brand positioning projects are expensive agency engagements. Our platform delivers the same strategic intelligence that informs marketing campaigns — from market analysis to growth opportunities — at a fraction of the cost and turnaround time.",
+    desc: "Competitive analysis, market sizing, and brand positioning projects are expensive agency engagements. Our platform delivers the same strategic intelligence that informs marketing campaigns - from market analysis to growth opportunities - at a fraction of the cost and turnaround time.",
     tradCost: "$5,000 – $20,000",
     tradTime: "4 – 8 weeks",
     platformTime: "Minutes",
@@ -142,10 +142,10 @@ export function Mission() {
           To democratise strategic business intelligence
         </h1>
         <p className="text-lg text-[var(--text-secondary)] leading-relaxed mb-4">
-          Replacing weeks of expensive analyst work with AI-powered reports delivered in minutes — making institutional-grade company analysis accessible to every investor, researcher, sales professional, and marketer.
+          Replacing weeks of expensive analyst work with AI-powered reports delivered in minutes - making institutional-grade company analysis accessible to every investor, researcher, sales professional, and marketer.
         </p>
         <p className="text-[var(--text-secondary)] leading-relaxed">
-          We believe that deep company insight should not be locked behind six-figure consulting fees or month-long research cycles. By combining the latest advances in AI with structured analytical frameworks, we deliver the same depth of analysis that Fortune 500 strategy teams rely on — at a fraction of the cost and turnaround time.
+          We believe that deep company insight should not be locked behind six-figure consulting fees or month-long research cycles. By combining the latest advances in AI with structured analytical frameworks, we deliver the same depth of analysis that Fortune 500 strategy teams rely on - at a fraction of the cost and turnaround time.
         </p>
       </section>
 
@@ -154,7 +154,7 @@ export function Mission() {
         <div className="mb-10 text-center">
           <h2 className="text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">How We Got Here</h2>
           <p className="mt-2 text-[var(--text-secondary)]">
-            Built through rapid iteration, each phase added a new layer of capability — transforming a simple analysis tool into a full-stack business intelligence platform.
+            Built through rapid iteration, each phase added a new layer of capability - transforming a simple analysis tool into a full-stack business intelligence platform.
           </p>
         </div>
 
@@ -242,7 +242,7 @@ export function Mission() {
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] px-8 py-12 text-center">
           <h2 className="text-2xl font-bold text-[var(--text-primary)] sm:text-3xl mb-4">The Bottom Line</h2>
           <p className="max-w-2xl mx-auto text-[var(--text-secondary)] leading-relaxed mb-10">
-            What once required a team of analysts, weeks of research, and tens of thousands in consulting fees can now be accomplished by a single person in minutes. Our platform does not just save money — it fundamentally changes who can access strategic business intelligence and how quickly they can act on it.
+            What once required a team of analysts, weeks of research, and tens of thousands in consulting fees can now be accomplished by a single person in minutes. Our platform does not just save money - it fundamentally changes who can access strategic business intelligence and how quickly they can act on it.
           </p>
 
           {/* Stats */}
@@ -257,7 +257,7 @@ export function Mission() {
 
           <Link href="/">
             <a className="btn-primary inline-flex items-center gap-2 px-6 py-3">
-              Get Started — Generate a Report
+              Get Started - Generate a Report
             </a>
           </Link>
         </div>
@@ -271,7 +271,7 @@ export function Mission() {
           </p>
         </div>
         <p className="text-center text-xs text-[var(--text-muted)]">
-          Built by 1GigLabs — Strategic Business Intelligence, Powered by AI
+          Built by 1GigLabs - Strategic Business Intelligence, Powered by AI
         </p>
       </section>
 

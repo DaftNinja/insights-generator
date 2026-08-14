@@ -50,7 +50,7 @@ export async function createSigninToken(userId: number): Promise<string> {
 export async function consumeSigninToken(token: string): Promise<User | null> {
   const now = new Date();
 
-  // Mark used only if currently unused and unexpired — single atomic write.
+  // Mark used only if currently unused and unexpired - single atomic write.
   const updated = await db
     .update(signinTokens)
     .set({ usedAt: now })

@@ -877,7 +877,7 @@ def findings_from_report(
     Uses ranked candidates (post-rerank) when available for quality scores and explanations.
     Supplements with raw items from items_by_source for HN/PM that didn't rank highly
     but are valuable for watchlist persistence. When ranked_candidates is empty
-    (degraded path — rerank failed or was skipped), falls back to supplementing
+    (degraded path - rerank failed or was skipped), falls back to supplementing
     all sources from items_by_source so findings aren't silently dropped.
     """
     findings = []

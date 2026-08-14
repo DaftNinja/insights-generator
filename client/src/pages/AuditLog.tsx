@@ -38,7 +38,7 @@ export function AuditLog() {
       <PageHeader
         label="Admin"
         title="Audit Log"
-        subtitle="All system activity — report generations, errors, and events."
+        subtitle="All system activity - report generations, errors, and events."
       />
 
       {error && (
@@ -84,13 +84,13 @@ export function AuditLog() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-xs text-[var(--text-primary)] max-w-[180px] truncate">
-                        {log.email ?? <span className="text-[var(--text-muted)]">—</span>}
+                        {log.email ?? <span className="text-[var(--text-muted)]">-</span>}
                       </td>
                       <td className="px-4 py-3 text-xs text-[var(--text-muted)] hidden md:table-cell max-w-[200px] truncate">
-                        {log.detail ?? "—"}
+                        {log.detail ?? "-"}
                       </td>
                       <td className="px-4 py-3 text-xs text-[var(--text-muted)] hidden lg:table-cell font-mono">
-                        {log.ipAddress ?? "—"}
+                        {log.ipAddress ?? "-"}
                       </td>
                     </tr>
                   ))}

@@ -455,7 +455,7 @@ export async function exportToPPTX(report: ReportData): Promise<void> {
 
 export function exportToHTML(report: ReportData): void {
   const esc = (s: unknown) => String(s ?? "N/A").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const val = (s: unknown) => (s != null && s !== "" && s !== "null") ? esc(s) : "—";
+  const val = (s: unknown) => (s != null && s !== "" && s !== "null") ? esc(s) : "-";
 
   const es  = report.executiveSummary;
   const fin = report.financials;
@@ -472,7 +472,7 @@ export function exportToHTML(report: ReportData): void {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>${esc(report.companyName)} — 1GigLabs Intelligence Report</title>
+<title>${esc(report.companyName)} - 1GigLabs Intelligence Report</title>
 <style>
   body { font-family: Arial, sans-serif; background: #080d14; color: #f1f5f9; margin: 0; padding: 40px; }
   .container { max-width: 900px; margin: 0 auto; }
@@ -592,10 +592,10 @@ export function exportToHTML(report: ReportData): void {
   <!-- ═══ SWOT ═══ -->
   <h2>SWOT Analysis</h2>
   <div class="grid">
-    <div class="card"><h3 style="color:#10b981">Strengths</h3><ul>${swt.strengths.map(s => `<li><strong>${esc(s.title)}</strong> — ${esc(s.detail)}</li>`).join("")}</ul></div>
-    <div class="card"><h3 style="color:#ef4444">Weaknesses</h3><ul>${swt.weaknesses.map(w => `<li><strong>${esc(w.title)}</strong> — ${esc(w.detail)}</li>`).join("")}</ul></div>
-    <div class="card"><h3 style="color:#3b82f6">Opportunities</h3><ul>${swt.opportunities.map(o => `<li><strong>${esc(o.title)}</strong> — ${esc(o.detail)}</li>`).join("")}</ul></div>
-    <div class="card"><h3 style="color:#f59e0b">Threats</h3><ul>${swt.threats.map(t => `<li><strong>${esc(t.title)}</strong> — ${esc(t.detail)}</li>`).join("")}</ul></div>
+    <div class="card"><h3 style="color:#10b981">Strengths</h3><ul>${swt.strengths.map(s => `<li><strong>${esc(s.title)}</strong> - ${esc(s.detail)}</li>`).join("")}</ul></div>
+    <div class="card"><h3 style="color:#ef4444">Weaknesses</h3><ul>${swt.weaknesses.map(w => `<li><strong>${esc(w.title)}</strong> - ${esc(w.detail)}</li>`).join("")}</ul></div>
+    <div class="card"><h3 style="color:#3b82f6">Opportunities</h3><ul>${swt.opportunities.map(o => `<li><strong>${esc(o.title)}</strong> - ${esc(o.detail)}</li>`).join("")}</ul></div>
+    <div class="card"><h3 style="color:#f59e0b">Threats</h3><ul>${swt.threats.map(t => `<li><strong>${esc(t.title)}</strong> - ${esc(t.detail)}</li>`).join("")}</ul></div>
   </div>
 
   <!-- ═══ GROWTH OPPORTUNITIES ═══ -->

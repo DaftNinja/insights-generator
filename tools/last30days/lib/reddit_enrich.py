@@ -206,7 +206,7 @@ def enrich_reddit_item(
         item: Reddit item dict
         mock_thread_data: Mock data for testing
         timeout: HTTP timeout per attempt (default 10s for enrichment)
-        retries: Number of retries (default 1 — fail fast for enrichment)
+        retries: Number of retries (default 1 - fail fast for enrichment)
 
     Returns:
         Enriched item dict

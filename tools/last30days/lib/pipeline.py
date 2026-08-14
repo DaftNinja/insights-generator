@@ -781,7 +781,7 @@ def _retry_thin_sources(
     if not core:
         return
     # Note: we intentionally do NOT skip when core == topic. For short topics
-    # like "Kanye West", the 3-word core IS the topic — but the planner may
+    # like "Kanye West", the 3-word core IS the topic - but the planner may
     # have sent a different (worse) query to the source. Retrying with the
     # raw core subject is still valuable.
 

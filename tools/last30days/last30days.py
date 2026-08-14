@@ -295,7 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
             "to be included. Use for ambiguous single-token topics like 'Warriors' "
             "(nba,gsw,golden-state) to filter out Glasgow Warriors rugby, Honor "
             "of Kings Rogue Warriors, etc. When omitted, Polymarket returns all "
-            "matching markets — so expect cross-entity noise on generic topics."
+            "matching markets - so expect cross-entity noise on generic topics."
         ),
     )
     parser.add_argument(
@@ -375,7 +375,7 @@ def subrun_kwargs_for(
     Plan values win over auto_resolve values. Returns keys for all per-entity
     targeting flags so callers never fall through to closure defaults.
 
-    This helper is the single source of truth for sub-run kwargs — main-topic
+    This helper is the single source of truth for sub-run kwargs - main-topic
     flags can only leak if a caller bypasses it.
     """
     def _choose(plan_key: str, resolved_key: str | None = None):
@@ -521,7 +521,7 @@ def _show_runtime_ui(
     promo = _missing_sources_for_promo(diag)
     # The `web` promo nudges users to set BRAVE_API_KEY / SERPER_API_KEY, which
     # is wrong advice when a hosting reasoning model (Claude Code, Codex,
-    # Hermes, Gemini) is driving — those already have WebSearch and can
+    # Hermes, Gemini) is driving - those already have WebSearch and can
     # pre-resolve Step 0.55 themselves. Suppress the web promo when a hosting
     # model signal is present (--plan or --competitors-plan was passed).
     if promo:
@@ -774,7 +774,7 @@ def main() -> int:
                     sys.stderr.write(
                         "[Competitors] Cannot auto-discover peers without help.\n"
                         "\n"
-                        "RECOMMENDED PATH (hosting reasoning models — Claude Code, Codex, "
+                        "RECOMMENDED PATH (hosting reasoning models - Claude Code, Codex, "
                         "Hermes, Gemini, any agent with a WebSearch tool): YOU have "
                         "WebSearch. Use it to run full Step 0.55 per entity, then invoke "
                         "the engine with a vs-topic plus --competitors-plan:\n"

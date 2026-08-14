@@ -31,7 +31,7 @@ def _resolve_search_url(config: Optional[Dict[str, Any]] = None) -> str:
 
     Default is api.bsky.app. Override via BSKY_SEARCH_HOST in shell env or
     .env file. The project's env.py loads .env into config but not into
-    os.environ, so check both — same hybrid pattern as last30days.py for
+    os.environ, so check both - same hybrid pattern as last30days.py for
     LAST30DAYS_STORE.
 
     Hardens user-supplied host values against three common mis-configurations:
@@ -54,7 +54,7 @@ def _resolve_search_url(config: Optional[Dict[str, Any]] = None) -> str:
             host = host[len(prefix):]
             break
     if not host or "/" in host or " " in host:
-        # Embedded path or whitespace remains — don't trust it. Default + log.
+        # Embedded path or whitespace remains - don't trust it. Default + log.
         if raw != _DEFAULT_BSKY_SEARCH_HOST:
             _log(
                 f"BSKY_SEARCH_HOST={raw!r} is not a bare hostname; "
@@ -211,7 +211,7 @@ def search_bluesky(
         return {"posts": [], "error": "Bluesky credentials not configured"}
 
     # One-shot hygiene warning if BSKY_APP_PASSWORD is not in app-password
-    # form. createSession accepts main-account passwords too — but main
+    # form. createSession accepts main-account passwords too - but main
     # passwords have no scope (full account access), can't be revoked
     # individually, and rotating them breaks every service that holds them.
     # We warn but do not gate, matching the project's detect-don't-block
@@ -220,7 +220,7 @@ def search_bluesky(
         _log(
             "BSKY_APP_PASSWORD does not look like an app password "
             "(expected xxxx-xxxx-xxxx-xxxx, 19 chars). It may be a main "
-            "account password — those work but are bad hygiene. Generate "
+            "account password - those work but are bad hygiene. Generate "
             "an app password at https://bsky.app/settings/app-passwords"
         )
 

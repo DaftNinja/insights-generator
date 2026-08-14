@@ -3,7 +3,7 @@
 Reddit's public ``.json`` endpoints now return HTTP 403 from most contexts
 (shreddit anti-bot), so this is no longer the primary free path. The keyless
 pipeline (see reddit_keyless.py) still calls ``search`` as a cheap one-shot
-Tier 0 attempt — a residential machine may occasionally get a 200 — before
+Tier 0 attempt - a residential machine may occasionally get a 200 - before
 falling through to RSS discovery (reddit_rss.py) and shreddit comment
 enrichment (reddit_shreddit.py).
 
@@ -197,7 +197,7 @@ def search(
 
     Args:
         query: Search query string
-        depth: 'quick', 'default', or 'deep' — controls result limit
+        depth: 'quick', 'default', or 'deep' - controls result limit
         subreddit: Optional subreddit name (without r/) for scoped search
         timeout: HTTP timeout in seconds
 
