@@ -711,9 +711,116 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
 
 // ─── Report Part A: overview + financials + strategy + market ─────────────────
 
-async function generatePartA(companyName: string, knownRevenue?: string): Promise<unknown> {
-  // Resolve CEO via a tiny targeted web search (low token cost) before the main call
-  const currentCEO = await lookupCEO(companyName);
+async function generatePartA(
+  companyName: string,
+  knownRevenue?: string,
+  fmpFinancials?: FMPFinancials | null,
+  currentCEO?: string,
+  wikiData?: WikipediaData | null,
+  socialContext?: string | null,
+  privateIntel?: PrivateCompanyIntel | null,
+): Promise<unknown> {
+  const ceo = currentCEO ?? await lookupCEO(companyName);
+
+  const fin = fmpFinancials;
+
+  let finBlock: string;
+  if (fin) {
+    finBlock = `VERIFIED FINANCIAL DATA (Financial Modeling Prep — use verbatim, do not alter):
+- Ticker:               ${fin.ticker}
+- Fiscal Year:          ${fin.fiscalYear}
+- Revenue:              ${fin.revenue}
+- Revenue Growth (YoY): ${fin.revenueGrowth}
+- Net Income:           ${fin.netIncome}
+- EBITDA:               ${fin.ebitda}
+- Market Cap:           ${fin.marketCap}
+- Stock Price:          ${fin.stockPrice}
+- P/E Ratio:            ${fin.peRatio}
+- EPS (Annual):         ${fin.epsAnnual}
+- Gross Margin:         ${fin.grossMargin}
+- Operating Margin:     ${fin.operatingMargin}
+- Analyst Target Price: ${fin.analystTarget}
+- Analyst Rating:       ${fin.analystRating}
+- Employees:            ${fin.employees ?? "N/A"}
+- Revenue History (chronological):
+${fin.revenueHistory.map(r => `  ${r.year}: ${r.revenue} (${r.growth})`).join("\n")}
+
+Use ALL of the above values verbatim in the financials object. Do not substitute your own estimates for any field that has been provided.
+Set executiveSummary.employees to exactly: ${fin.employees ?? "null"} - do not use any other figure.`;
+  } else if (wikiData) {
+    const wikiLines: string[] = [];
+    if (wikiData.revenue)      wikiLines.push(`- Revenue:              ${wikiData.revenue}`);
+    if (wikiData.netIncome)    wikiLines.push(`- Net Income:           ${wikiData.netIncome}`);
+    if (wikiData.aum)          wikiLines.push(`- AUM:                  ${wikiData.aum}`);
+    if (wikiData.totalAssets)  wikiLines.push(`- Total Assets:         ${wikiData.totalAssets}`);
+    if (wikiData.employees)    wikiLines.push(`- Employees:            ${wikiData.employees}`);
+    if (wikiData.founded)      wikiLines.push(`- Founded:              ${wikiData.founded}`);
+    if (wikiData.headquarters) wikiLines.push(`- Headquarters:         ${wikiData.headquarters}`);
+    if (wikiData.website)      wikiLines.push(`- Website:              ${wikiData.website}`);
+
+    finBlock = `SUPPLEMENTAL DATA (Wikipedia — private/unlisted company; use as directional reference):
+${wikiLines.join("\n")}
+
+COMPANY CONTEXT (Wikipedia extract — use to enrich overview, strategy, and market sections):
+${wikiData.extract}
+
+Note: This company is private/unlisted. No stock price, market cap, P/E ratio, or analyst ratings are available.
+Use the Wikipedia figures above for revenue, employees, and other available fields. Set executiveSummary.employees verbatim from the Wikipedia figure above if present.
+For unavailable fields (stock price, market cap, EPS, analyst target), return null.`;
+  } else if (privateIntel) {
+    // Private/unlisted company — web search ran but found no public financials.
+    // Use only what the web search actually found; never fabricate from training knowledge.
+    finBlock = `No verified financial data is available for ${companyName} from any external source (FMP, Wikipedia, or web search).
+
+PRIVATE COMPANY FINANCIAL POLICY — STRICTLY ENFORCED:
+This is a private or unlisted company. Do NOT use training-knowledge estimates for financial figures.
+- Revenue: ${privateIntel.revenueEstimate ? `use "${privateIntel.revenueEstimate}" (web search estimate — mark clearly as estimated)` : "return null"}
+- Return null for: netIncome, ebitda, marketCap, stockPrice, peRatio, epsAnnual, analystTarget, analystRating
+- Return [] for revenueHistory (no historical series available)
+- Set fiscalYear to null
+- DO NOT invent, estimate, or approximate any financial figure not explicitly provided above
+- executiveSummary.employees: ${privateIntel.employees ? `use "${privateIntel.employees}" from web search` : "return null"}`;
+  } else {
+    // No data from FMP, Wikipedia, or private intel — last resort for well-known public
+    // companies that FMP couldn't resolve (e.g. large non-US listed companies).
+    // ONLY use training knowledge if you are genuinely confident this is a major public company.
+    finBlock = `No verified financial data is available from a live API for ${companyName}.
+
+FINANCIALS FROM TRAINING KNOWLEDGE — RESTRICTED USE:
+Only apply this if you are highly confident ${companyName} is a well-known major public company (e.g. FTSE 100, Euro Stoxx 50, Nikkei 225, S&P 500) with reliable published financials in your training data. If you have any doubt — especially if the company name is ambiguous, niche, or unfamiliar — return null for all financial fields rather than guessing.
+- Use the company's reporting currency (£ for UK/LSE-listed, € for Eurozone, ¥ for Japan, $ for US). Never convert to USD unless the company reports in USD.
+- For UK retailers specifically: report in £ sterling. Tesco FY2024 revenue ≈68.2B, Sainsbury's ≈31B, Marks & Spencer ≈13B.
+- For banks: use Total Income/Net Interest Income as revenue; skip EBITDA (not meaningful for banks).
+- Return a single value, never a range (e.g. "£68.2B" not "£65B-£72B"). Use your best estimate for the most recent full fiscal year.
+- State the fiscal year you are drawing from (e.g. FY2024, FY2023).
+- Populate revenueHistory for 3-4 years where you have data. NEVER return only one year — this makes the chart useless. For FTSE 100 companies you always have at least 3-4 years of data.
+- UK retailer revenue history examples: Tesco FY2021 £54.8B, FY2022 £61.3B, FY2023 £65.8B, FY2024 £69.9B. Use these verbatim if generating a Tesco report.
+- revenueGrowth must be calculated from revenueHistory (current year vs prior year), never return N/A for a multi-year company.
+- For genuinely unknown figures (e.g. current live stock price, analyst targets), return null.
+- Round estimates are fine (e.g. "£25B" not "£25.374B").
+- executiveSummary.employees: use a single number, never a range. For well-known companies: Tesco ~330,000, HSBC ~220,000, Barclays ~85,000, Lloyds ~58,000, NatWest ~62,000, JPMorgan ~310,000.
+- DO NOT return null for revenue, netIncome, or marketCap for a FTSE 100 company. These are always available in your training data.
+- DO NOT return null for employees for a FTSE 100 company. Headcount figures are publicly reported annually.
+- DO NOT return a range for any financial figure. Pick the most accurate single value.
+- IF YOU ARE NOT CONFIDENT THIS IS A MAJOR PUBLIC COMPANY: return null for all financial fields. Never fabricate.`;
+  }
+
+  const wikiContextBlock = (!fin && wikiData)
+    ? ""
+    : (wikiData
+      ? `\nSUPPLEMENTAL CONTEXT (Wikipedia):
+- Founded: ${wikiData.founded ?? "N/A"}
+- Headquarters: ${wikiData.headquarters ?? "N/A"}
+- Employees: ${wikiData.employees ?? "N/A"}
+- Website: ${wikiData.website ?? "N/A"}`
+      : "");
+
+  const socialBlock = socialContext
+    ? `CURRENT INTELLIGENCE — LAST 30 DAYS (Reddit, X, YouTube, Hacker News, GitHub, Polymarket):
+${socialContext}
+
+Use this real-time signal to strengthen: executiveSummary.highlights, marketAnalysis.marketTrends, strategy.coreInitiatives. Prioritise recent facts over training-data assumptions where they conflict. Do not fabricate sources or citations.`
+    : "";
 
   const revenueHint = knownRevenue
     ? `\nIMPORTANT: The verified revenue for ${companyName} is "${knownRevenue}" — use this exact value in the financials.revenue field and as the most recent year in revenueHistory. Do NOT override it with an estimate.`
@@ -1042,10 +1149,39 @@ function computeConfidence(
 export async function generateReport(companyName: string, knownRevenue?: string): Promise<unknown> {
   const start = Date.now();
 
-  // Sequential — parallel calls compete for the 30k input token/min bucket and rate-limit.
-  // Small time cost (~5-10s extra) but reliable on build-tier API limits.
-  const partA = await generatePartA(companyName, knownRevenue);
-  const partB = await generatePartB(companyName);
+  const [fmpData, currentCEO, wikiData, socialContext] = await Promise.all([
+    lookupFMP(companyName),
+    lookupCEO(companyName),
+    lookupWikipedia(companyName),
+    runLast30Days(companyName),
+  ]);
+
+  // FMP is the primary source. If it returns no financials (plan limitation),
+  // generatePartA handles the LLM training knowledge fallback via the finBlock prompt.
+  const financials = fmpData.financials;
+
+  // For private/unlisted companies (no FMP data), run a targeted web search
+  // to pull funding, investors, key deals, and revenue estimates.
+  // Runs after FMP so we know whether we need it, but before Part A generation.
+  const privateIntel = !financials
+    ? await lookupPrivateCompanyIntel(companyName)
+    : null;
+
+  const dataSource = financials
+    ? "FMP"
+    : wikiData?.revenue || wikiData?.aum
+      ? "Wikipedia fallback"
+      : "LLM training knowledge";
+
+  console.log(`📊 Data source for "${companyName}": ${dataSource}`);
+  if (financials?.employees) {
+    console.log(`👥 Employees from FMP: ${financials.employees}`);
+  }
+
+  const partA = await generatePartA(companyName, knownRevenue, financials, currentCEO, wikiData, socialContext, privateIntel);
+  const partB = await generatePartB(companyName, fmpData.esg, socialContext, privateIntel);
+
+  console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (FMP + Wiki + CEO + Haiku x2)`);
 
   // Sanitise LLM financial output — reject ranges and USD for known UK companies
   const partATyped = partA as any;
