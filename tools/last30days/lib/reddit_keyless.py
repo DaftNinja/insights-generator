@@ -3,11 +3,11 @@
 Replaces the dead ``.json`` free path. Discovery tiers, cheapest/most-likely
 first; enrichment then runs on whatever was discovered:
 
-  Tier 0  one-shot legacy ``.json`` search — demoted. Datacenter IPs get 403,
+  Tier 0  one-shot legacy ``.json`` search - demoted. Datacenter IPs get 403,
           but a residential machine (where the skill usually runs) may still
           get 200, so it is worth one cheap try. Honors the "brute-force .json"
           intent without depending on it.
-  Tier 1  RSS discovery (reddit_rss) — keyless, robust, the load-bearing path.
+  Tier 1  RSS discovery (reddit_rss) - keyless, robust, the load-bearing path.
   Tier 2  shreddit comment + count enrichment (reddit_shreddit) for top posts.
 
 Returns ``[]`` (never raises) so ``pipeline.py`` can fall through to the
@@ -70,13 +70,13 @@ def _discover(topic: str, depth: str, subreddits: Optional[List[str]]) -> List[D
 
     if subreddits:
         # Targeted run: the caller chose these subreddits, so their listing cards
-        # are on-topic — include them as scored discovery AND as a score source.
+        # are on-topic - include them as scored discovery AND as a score source.
         listing_posts = reddit_listing.fetch_listings(subreddits, depth=depth, query=topic)
         score_source = listing_posts
     else:
         # Bare global run: subreddits derived from noisy RSS results are NOT
         # reliably on-topic, so their listings are used ONLY to backfill scores
-        # onto the keyword-matched RSS posts — never merged as discovery, which
+        # onto the keyword-matched RSS posts - never merged as discovery, which
         # would flood results with high-upvote but irrelevant posts.
         listing_posts = []
         derived = _top_subreddits(rss_posts)
@@ -170,8 +170,8 @@ def _slot_priority(topic: str, posts: List[Dict[str, Any]]) -> List[Dict[str, An
     posts that rerank later demotes as entity misses starves the on-topic
     posts the user actually sees (2026-06-06 "OpenClaw vs Hermes" run:
     2,000+ upvote Gemma/GPU threads took every slot, then were demoted to
-    zero). Mirror rerank's demotion signal — the topic's stripped primary
-    entity contained in the post text — so slots go to posts likely to
+    zero). Mirror rerank's demotion signal - the topic's stripped primary
+    entity contained in the post text - so slots go to posts likely to
     survive final ranking. Falls back to token-overlap relevance when the
     topic yields no usable primary entity. Within each tier the incoming
     (score-first) order is preserved. Never raises; on any failure the
@@ -235,7 +235,7 @@ def search_and_enrich(
 
     # Rank by real upvote score (from listing cards / backfill), then query
     # relevance, then recency. Posts without a recovered score sort by the
-    # latter two — same behavior as before scores were available.
+    # latter two - same behavior as before scores were available.
     posts.sort(
         key=lambda p: (
             p.get("engagement", {}).get("score", 0) or 0,

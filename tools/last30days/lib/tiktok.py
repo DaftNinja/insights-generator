@@ -455,7 +455,7 @@ def search_and_enrich(
                     seen_ids.add(vid)
                     items.append(item)
 
-    # Step 1: Multi-query keyword search — run ScrapeCreators for each expanded query
+    # Step 1: Multi-query keyword search - run ScrapeCreators for each expanded query
     queries = expand_tiktok_queries(topic, depth)
     for q in queries:
         search_result = search_tiktok(q, from_date, to_date, depth, token)
@@ -572,7 +572,7 @@ def _fetch_post_comments(
 
     Returns:
         List of comment dicts with author, text, digg_count (likes), date.
-        Empty list on any error — comment failures never crash the pipeline.
+        Empty list on any error - comment failures never crash the pipeline.
     """
     try:
         data = http.get(

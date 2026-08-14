@@ -57,7 +57,7 @@ def _get_chromium_encryption_key(service_name: str) -> Optional[bytes]:
             return None
         return passphrase.encode("utf-8")
     except FileNotFoundError:
-        logger.info("'security' command not found — not on macOS?")
+        logger.info("'security' command not found - not on macOS?")
         return None
     except subprocess.TimeoutExpired:
         logger.info("%s Keychain access timed out", service_name)
@@ -129,7 +129,7 @@ def _decrypt_v10_value(encrypted_value: bytes, aes_key: bytes, db_version: int) 
         return decrypted.decode("utf-8", errors="replace")
 
     except FileNotFoundError:
-        logger.info("openssl not found — cannot decrypt Chrome cookies")
+        logger.info("openssl not found - cannot decrypt Chrome cookies")
         return None
     except subprocess.TimeoutExpired:
         logger.info("openssl decryption timed out")
@@ -243,7 +243,7 @@ def _extract_chromium_cookies_macos(
 
             if encrypted_value and encrypted_value[:3] == b"v10":
                 if aes_key is None:
-                    logger.debug("Skipping encrypted cookie %s — no Keychain access", name)
+                    logger.debug("Skipping encrypted cookie %s - no Keychain access", name)
                     continue
                 decrypted = _decrypt_v10_value(encrypted_value, aes_key, db_version)
                 if decrypted:

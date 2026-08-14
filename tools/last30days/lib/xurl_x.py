@@ -1,4 +1,4 @@
-"""X (Twitter) search via xurl CLI — official X API v2 with OAuth2.
+"""X (Twitter) search via xurl CLI - official X API v2 with OAuth2.
 
 xurl is an open-source CLI for the X API (https://github.com/openclaw/xurl).
 It uses OAuth2 with PKCE and automatic token refresh, requiring only a free

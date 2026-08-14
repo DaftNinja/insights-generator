@@ -35,7 +35,7 @@ def _merge_category_peers(topic: str, subreddits: list[str]) -> tuple[list[str],
     Emits a [Resolve] Matched category log line only when peers were
     actually added (not when every peer was already in the WebSearch set).
 
-    Classification failures degrade to "no match" — the unwidened list
+    Classification failures degrade to "no match" - the unwidened list
     is returned and a warning is logged.
     """
     try:

@@ -1,6 +1,6 @@
 # 1GigLabs Insight Generator
 
-Strategic business intelligence platform powered by Claude AI. Enter any company name and get a comprehensive 10-section report — financials, strategy, market analysis, tech spend, ESG, SWOT, growth opportunities, risk assessment, digital transformation, and sales enablement — in under 60 seconds.
+Strategic business intelligence platform powered by Claude AI. Enter any company name and get a comprehensive 10-section report - financials, strategy, market analysis, tech spend, ESG, SWOT, growth opportunities, risk assessment, digital transformation, and sales enablement - in under 60 seconds.
 
 ---
 <img width="12913" height="2948" alt="diagram" src="https://github.com/user-attachments/assets/0f59ff47-aa1b-45d9-b865-52d29769314e" />
@@ -58,7 +58,7 @@ The app runs at `http://localhost:5173` (Vite) with the API proxied to `http://l
 
 In your Railway project:
 1. Click **+ New** → **Database** → **Add PostgreSQL**
-2. Railway automatically injects `DATABASE_URL` into your service — no manual config needed
+2. Railway automatically injects `DATABASE_URL` into your service - no manual config needed
 
 ### 3. Set environment variables
 
@@ -80,7 +80,7 @@ Railway will trigger a build on every push to `main`. The build process:
 3. Bundles server (`esbuild` → `dist/server.js`)
 4. Starts server (`node dist/server.js`)
 
-The server initialises the `reports` table on first boot — no manual migration needed.
+The server initialises the `reports` table on first boot - no manual migration needed.
 
 ---
 
@@ -132,12 +132,12 @@ Reports are cached for **2 months**. On generation:
 ## Export Formats
 
 From any report page:
-- **PDF** — `html2canvas` + `jsPDF` browser-side rendering
-- **PPTX** — `pptxgenjs` structured slide deck (cover + exec summary + financials + SWOT + risk)
-- **HTML** — Self-contained dark-themed HTML file
+- **PDF** - `html2canvas` + `jsPDF` browser-side rendering
+- **PPTX** - `pptxgenjs` structured slide deck (cover + exec summary + financials + SWOT + risk)
+- **HTML** - Self-contained dark-themed HTML file
 
 ---
 
 ## Licence
 
-Private / proprietary — 1GigLabs © 2025
+Private / proprietary - 1GigLabs © 2025

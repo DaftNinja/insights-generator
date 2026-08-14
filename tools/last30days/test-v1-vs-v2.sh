@@ -82,7 +82,7 @@ run_version() {
 
   echo ""
   echo "=========================================="
-  echo "  Running $version — $total queries"
+  echo "  Running $version - $total queries"
   echo "=========================================="
   echo ""
 
@@ -101,7 +101,7 @@ run_version() {
     start_time=$(date +%s)
 
     # Run claude --print with the skill invocation
-    # No timeout — claude --print exits on its own; kill manually if stuck
+    # No timeout - claude --print exits on its own; kill manually if stuck
     if "$CLAUDE" --print \
       "/last30days $query" \
       > "$outfile" 2>"$errfile"; then
@@ -110,7 +110,7 @@ run_version() {
       local duration=$((end_time - start_time))
       local lines
       lines=$(wc -l < "$outfile")
-      echo "  ✅ Done — ${lines} lines, ${duration}s"
+      echo "  ✅ Done - ${lines} lines, ${duration}s"
     else
       local exit_code=$?
       echo "  ❌ Failed (exit $exit_code)" | tee -a "$outfile"
@@ -174,7 +174,7 @@ for i in "${!QUERIES[@]}"; do
   v1lines=$(wc -l < "$v1file" 2>/dev/null || echo "ERR")
   v2lines=$(wc -l < "$v2file" 2>/dev/null || echo "ERR")
 
-  echo "| $num | \`$query\` | $type | $v1lines | $v2lines | — | — |" >> "$SUMMARY"
+  echo "| $num | \`$query\` | $type | $v1lines | $v2lines | - | - |" >> "$SUMMARY"
 done
 
 cat >> "$SUMMARY" << 'EOF'

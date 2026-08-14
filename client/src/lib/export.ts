@@ -176,7 +176,7 @@ export function exportToHTML(report: ReportData): void {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>${report.companyName} — Maudslay Consulting Intelligence Report</title>
+<title>${report.companyName} - Maudslay Consulting Intelligence Report</title>
 <style>
   body { font-family: Arial, sans-serif; background: #080d14; color: #f1f5f9; margin: 0; padding: 40px; }
   .container { max-width: 900px; margin: 0 auto; }
@@ -221,10 +221,10 @@ export function exportToHTML(report: ReportData): void {
 
   <h2>SWOT Analysis</h2>
   <div class="grid">
-    <div class="card"><h3 style="color:#CC0000">Strengths</h3><ul>${report.swot.strengths.map(s => `<li><strong>${s.title}</strong> — ${s.detail}</li>`).join("")}</ul></div>
-    <div class="card"><h3 style="color:#ef4444">Weaknesses</h3><ul>${report.swot.weaknesses.map(w => `<li><strong>${w.title}</strong> — ${w.detail}</li>`).join("")}</ul></div>
-    <div class="card"><h3 style="color:#3b82f6">Opportunities</h3><ul>${report.swot.opportunities.map(o => `<li><strong>${o.title}</strong> — ${o.detail}</li>`).join("")}</ul></div>
-    <div class="card"><h3 style="color:#f59e0b">Threats</h3><ul>${report.swot.threats.map(t => `<li><strong>${t.title}</strong> — ${t.detail}</li>`).join("")}</ul></div>
+    <div class="card"><h3 style="color:#CC0000">Strengths</h3><ul>${report.swot.strengths.map(s => `<li><strong>${s.title}</strong> - ${s.detail}</li>`).join("")}</ul></div>
+    <div class="card"><h3 style="color:#ef4444">Weaknesses</h3><ul>${report.swot.weaknesses.map(w => `<li><strong>${w.title}</strong> - ${w.detail}</li>`).join("")}</ul></div>
+    <div class="card"><h3 style="color:#3b82f6">Opportunities</h3><ul>${report.swot.opportunities.map(o => `<li><strong>${o.title}</strong> - ${o.detail}</li>`).join("")}</ul></div>
+    <div class="card"><h3 style="color:#f59e0b">Threats</h3><ul>${report.swot.threats.map(t => `<li><strong>${t.title}</strong> - ${t.detail}</li>`).join("")}</ul></div>
   </div>
 
   <h2>Growth Opportunities</h2>

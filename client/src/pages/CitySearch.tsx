@@ -423,7 +423,7 @@ export function CitySearch() {
       <PageHeader
         label="Company Discovery"
         title="Find Companies by City"
-        subtitle="Locate businesses in any city, ranked by proximity — with one-click insight generation."
+        subtitle="Locate businesses in any city, ranked by proximity - with one-click insight generation."
       />
 
       {/* ── Search form ── */}
@@ -486,12 +486,12 @@ export function CitySearch() {
           </div>
         </div>
 
-        {/* Optional context — shown once a city is selected */}
+        {/* Optional context - shown once a city is selected */}
         {canSearch && (
           <div className="mt-4 animate-fade-up">
             <label htmlFor="context-input" className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">
               Refine results{" "}
-              <span className="font-normal text-[var(--text-muted)]">(optional) — e.g. "financial services", "manufacturing over $500M revenue"</span>
+              <span className="font-normal text-[var(--text-muted)]">(optional) - e.g. "financial services", "manufacturing over $500M revenue"</span>
             </label>
             <textarea
               id="context-input"
@@ -523,7 +523,7 @@ export function CitySearch() {
             <div className="absolute inset-0 rounded-full border-t-2 border-[var(--primary)] animate-spin" />
           </div>
           <p className="text-sm font-medium text-[var(--text-primary)]">Searching for companies near {city}…</p>
-          <p className="text-xs text-[var(--text-muted)]">Web search in progress — usually takes 15–30 seconds</p>
+          <p className="text-xs text-[var(--text-muted)]">Web search in progress - usually takes 15–30 seconds</p>
         </div>
       )}
 
@@ -667,15 +667,15 @@ export function CitySearch() {
             <div className="flex flex-wrap gap-4 text-xs">
               <span className="flex items-center gap-1.5 text-emerald-700">
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                <strong>Within 20 km</strong> — very favourable
+                <strong>Within 20 km</strong> - very favourable
               </span>
               <span className="flex items-center gap-1.5 text-amber-700">
                 <span className="h-2 w-2 rounded-full bg-amber-400" />
-                <strong>20–50 km</strong> — good candidate
+                <strong>20–50 km</strong> - good candidate
               </span>
               <span className="flex items-center gap-1.5 text-slate-600">
                 <span className="h-2 w-2 rounded-full bg-slate-400" />
-                <strong>50–100 km</strong> — optional
+                <strong>50–100 km</strong> - optional
               </span>
             </div>
           </div>

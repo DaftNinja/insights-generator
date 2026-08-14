@@ -15,7 +15,7 @@ def _skill_version() -> str:
     """Read plugin version from .claude-plugin/plugin.json, falling back to SKILL.md frontmatter.
 
     Per-harness skill install dirs (`~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`,
-    Hermes, etc.) do not always carry `.claude-plugin/plugin.json` — that file ships with
+    Hermes, etc.) do not always carry `.claude-plugin/plugin.json` - that file ships with
     plugin-cache installs but not with per-harness skill installs. SKILL.md frontmatter is
     the fallback that keeps the badge from emitting v? on those installs. Returns "?" only
     if no usable version string is found from either source (missing files, corrupt JSON,
@@ -36,7 +36,7 @@ def _skill_version() -> str:
             if version:
                 return version
 
-    # No usable manifest found at any ancestor — fall back to SKILL.md frontmatter.
+    # No usable manifest found at any ancestor - fall back to SKILL.md frontmatter.
     # First SKILL.md found in the walk is THIS skill's; never traverse past it.
     for parent in here.parents:
         skill_md = parent / "SKILL.md"
@@ -1626,7 +1626,7 @@ def _format_explanation(candidate: schema.Candidate) -> str | None:
 
 
 # Per-source minimum vote counts for showing a top comment in compact emit.
-# Reddit upvotes, YouTube likes, and TikTok likes are not comparable units —
+# Reddit upvotes, YouTube likes, and TikTok likes are not comparable units -
 # 10 upvotes on Reddit signals genuine community interest, 10 likes on a
 # viral TikTok is noise. First-pass values; tune after live observation.
 _TOP_COMMENT_MIN_SCORE: dict[str, int] = {

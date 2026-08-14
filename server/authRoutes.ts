@@ -76,7 +76,7 @@ authRouter.post("/request-link", async (req, res) => {
     }
 
     if (!user.isActive) {
-      // Silent — don't tell the caller the account is deactivated.
+      // Silent - don't tell the caller the account is deactivated.
       return res.json(NEUTRAL_LINK_RESPONSE);
     }
 
@@ -91,7 +91,7 @@ authRouter.post("/request-link", async (req, res) => {
   }
 });
 
-// ─── Callback — consumes magic link, creates session, redirects to app ────────
+// ─── Callback - consumes magic link, creates session, redirects to app ────────
 
 authRouter.get("/callback", async (req, res) => {
   const token = typeof req.query.token === "string" ? req.query.token : "";
@@ -133,7 +133,7 @@ authRouter.get("/callback", async (req, res) => {
       res.redirect("/");
     });
   } catch (err) {
-    // Never let the callback silently close the connection — always redirect.
+    // Never let the callback silently close the connection - always redirect.
     console.error("callback handler error:", err);
     try {
       res.redirect(loginWith("server_error"));

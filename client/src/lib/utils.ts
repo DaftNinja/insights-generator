@@ -1,7 +1,7 @@
 export function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return "—";
+  if (!date) return "-";
   const d = new Date(date);
-  if (isNaN(d.getTime())) return "—";
+  if (isNaN(d.getTime())) return "-";
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
@@ -58,11 +58,11 @@ export function cn(...classes: (string | undefined | false | null)[]): string {
 
 // Headcount strings arrive from the model in many shapes: "330,000",
 // "c. 330,000 employees", "330,000–342,423", "330,000 (FY2024)".
-// Take the FIRST numeric group only — never strip all non-digits from the whole
+// Take the FIRST numeric group only - never strip all non-digits from the whole
 // string, which silently concatenates two figures into one absurd number
 // (e.g. "330,000 342,423" -> 330,000,342,423).
 export function formatHeadcount(value: string | number | null | undefined): string {
-  if (value === null || value === undefined || value === "") return "—";
+  if (value === null || value === undefined || value === "") return "-";
   const raw = String(value).trim();
   const match = raw.match(/\d[\d,]*/);
   if (!match) return raw;

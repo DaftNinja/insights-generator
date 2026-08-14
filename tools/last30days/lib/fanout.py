@@ -6,7 +6,7 @@ via a `ThreadPoolExecutor` and collects per-entity Reports. Per-entity
 failures are logged and dropped; the run survives as long as the main topic
 plus at least one competitor succeed.
 
-This module owns no business logic about pipeline arguments — the caller
+This module owns no business logic about pipeline arguments - the caller
 (scripts/last30days.py main) builds the closures with the appropriate
 config, depth, and overrides for each entity.
 """

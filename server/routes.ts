@@ -76,7 +76,7 @@ router.post("/reports/generate", async (req: any, res) => {
       }
     }
 
-    // Generate — retry up to 2 times, with backoff for rate limits
+    // Generate - retry up to 2 times, with backoff for rate limits
     let reportData: unknown;
     let lastError: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -86,7 +86,7 @@ router.post("/reports/generate", async (req: any, res) => {
       } catch (err: any) {
         lastError = err;
         const status = err?.status ?? 0;
-        // 429 = rate limited — wait and retry
+        // 429 = rate limited - wait and retry
         if (status === 429) {
           const retryAfter = parseInt(err?.headers?.['retry-after'] ?? '10', 10);
           const waitMs = Math.min((retryAfter + 2) * 1000, 30000);
@@ -94,7 +94,7 @@ router.post("/reports/generate", async (req: any, res) => {
           await new Promise(r => setTimeout(r, waitMs));
           continue;
         }
-        // Other 4xx errors (except 429) — don't retry
+        // Other 4xx errors (except 429) - don't retry
         if (status >= 400 && status < 500) throw err;
         if (attempt === 0) {
           console.warn(`Report generation attempt 1 failed (${status}), retrying…`);
@@ -115,7 +115,7 @@ router.post("/reports/generate", async (req: any, res) => {
     console.error("POST /reports/generate error:", err);
     const status = err?.status ?? 0;
     const message = status === 429
-      ? "Service is temporarily busy — please wait a moment and try again."
+      ? "Service is temporarily busy - please wait a moment and try again."
       : "Report generation failed. Please try again.";
     res.status(500).json({ error: message });
   }

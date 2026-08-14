@@ -1,13 +1,13 @@
 import { Resend } from "resend";
 
-// Sender — override with RESEND_FROM env var if a custom domain is configured.
+// Sender - override with RESEND_FROM env var if a custom domain is configured.
 const FROM = process.env.RESEND_FROM ?? "Maudslay Consulting <contact@1giglabs.com>";
 const APP_URL = process.env.APP_URL ?? "https://mc.1giglabs.com";
 
 function getResend(): Resend {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
-    console.warn("⚠️  RESEND_API_KEY not set — emails will be logged only");
+    console.warn("⚠️  RESEND_API_KEY not set - emails will be logged only");
     return {
       emails: {
         send: async (opts: any) => {
