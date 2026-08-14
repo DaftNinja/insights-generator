@@ -155,7 +155,7 @@ def fetch_comments(
     Returns:
         Dict with 'top_comments' (list, reddit_enrich shape), 'comment_insights'
         (list[str]), and 'num_comments' (int or None). Empty/None on any
-        failure — never raises, so the caller can fall through to SC backup.
+        failure - never raises, so the caller can fall through to SC backup.
     """
     ref = extract_post_ref(post_url)
     if not ref:

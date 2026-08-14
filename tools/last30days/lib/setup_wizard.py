@@ -37,7 +37,7 @@ def run_auto_setup(config: Dict[str, Any]) -> Dict[str, Any]:
         Dict with keys:
           cookies_found: {source_name: browser_name} for each source where cookies were found
           ytdlp_installed: bool
-          env_written: bool (always False here — caller writes config separately)
+          env_written: bool (always False here - caller writes config separately)
     """
     from . import cookie_extract
     from .env import COOKIE_DOMAINS
@@ -261,7 +261,7 @@ def auth_with_pat(github_token: str) -> Optional[Dict[str, Any]]:
             data = json.loads(resp.read())
     except HTTPError as exc:
         if exc.code == 422:
-            logger.warning("PAT auth: insufficient scope — user needs user:email")
+            logger.warning("PAT auth: insufficient scope - user needs user:email")
         else:
             logger.warning("PAT auth failed: %s", exc)
         return None
@@ -494,7 +494,7 @@ def run_github_auth(timeout: int = 300) -> Dict[str, Any]:
 
     1. Check for `gh` CLI
     2. If found, run `gh auth token` to get a PAT
-    3. POST PAT to ScrapeCreators — if it works, done
+    3. POST PAT to ScrapeCreators - if it works, done
     4. If PAT fails for any reason, fall through to device flow
 
     Returns JSON-serializable dict with status, method, and api_key.
@@ -511,7 +511,7 @@ def run_github_auth(timeout: int = 300) -> Dict[str, Any]:
             )
             if result.returncode == 0 and result.stdout.strip():
                 token = result.stdout.strip()
-                print("Found gh CLI — trying PAT auth...", file=sys.stderr)
+                print("Found gh CLI - trying PAT auth...", file=sys.stderr)
                 pat_result = auth_with_pat(token)
                 if pat_result and pat_result.get("api_key"):
                     return {
@@ -520,7 +520,7 @@ def run_github_auth(timeout: int = 300) -> Dict[str, Any]:
                         "api_key": pat_result["api_key"],
                         "github_username": pat_result.get("github_username", ""),
                     }
-                # PAT failed — might be insufficient scope
+                # PAT failed - might be insufficient scope
                 print(
                     "PAT auth didn't work (scope or endpoint issue). "
                     "Falling back to GitHub device flow...",
@@ -531,6 +531,6 @@ def run_github_auth(timeout: int = 300) -> Dict[str, Any]:
 
     # Step 2: Fall back to device flow
     if not gh_path:
-        print("gh CLI not found — using GitHub device flow...", file=sys.stderr)
+        print("gh CLI not found - using GitHub device flow...", file=sys.stderr)
 
     return run_full_device_auth(timeout=timeout)

@@ -78,7 +78,7 @@ export function Batch() {
       <PageHeader
         label="Batch Processing"
         title="Bulk Report Generation"
-        subtitle="Upload a CSV of company names — up to 50 — and generate all reports in one run."
+        subtitle="Upload a CSV of company names - up to 50 - and generate all reports in one run."
       />
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
@@ -110,7 +110,7 @@ export function Batch() {
             <div className="mt-2 flex items-center justify-between">
               <span className="text-xs text-[var(--text-muted)]">
                 {companies.length} companies parsed
-                {companies.length > 50 && " (max 50 — trimmed)"}
+                {companies.length > 50 && " (max 50 - trimmed)"}
               </span>
               {csvText && (
                 <button

@@ -19,7 +19,7 @@ export type DataConfidence = "verified" | "single-source" | "wikipedia" | "estim
 export interface FinancialsMetadata {
   source:      "FMP" | "Wikipedia" | "LLM" | "none";
   confidence:  DataConfidence;
-  fiscalYear:  string | null;   // e.g. "FY2024" — the period the numbers relate to
+  fiscalYear:  string | null;   // e.g. "FY2024" - the period the numbers relate to
   retrievedAt: string;          // ISO date string
 }
 
@@ -106,7 +106,7 @@ async function fmpGet<T>(path: string): Promise<T | null> {
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      // 402 = plan limitation (expected), 404 = no data for symbol (expected) — log as info not error
+      // 402 = plan limitation (expected), 404 = no data for symbol (expected) - log as info not error
       const level = (res.status === 402 || res.status === 404) ? 'info' : 'warn';
       console[level](`FMP ${path} → ${res.status}: ${body.slice(0, 150)}`);
       return null;
@@ -121,7 +121,7 @@ async function fmpGet<T>(path: string): Promise<T | null> {
 // ── Step 1: resolve company name → ticker ─────────────────────────────────────
 
 async function resolveFMPTicker(companyName: string): Promise<string | null> {
-  if (!FMP_KEY) { console.warn("FMP_API_KEY not set — skipping FMP lookup"); return null; }
+  if (!FMP_KEY) { console.warn("FMP_API_KEY not set - skipping FMP lookup"); return null; }
   console.log(`📈 FMP key present (length=${FMP_KEY.length}, first4=${FMP_KEY.slice(0,4)})`);
   try {
     const searchUrl = `${FMP_BASE}/search-name?query=${encodeURIComponent(companyName)}&limit=5&apikey=${FMP_KEY}`;
@@ -343,13 +343,13 @@ async function lookupPrivateCompanyIntel(companyName: string): Promise<PrivateCo
       model: MODEL_GROUNDED,
       max_tokens: 1200,
       tools: [{ type: "web_search_20250305", name: "web_search" }],
-      system: `You are a business intelligence researcher. Search for funding, investors, key deals, and financial data for private companies. Return ONLY a valid JSON object. No markdown, no explanation, no code fences.`,
+      system: `You are a business intelligence researcher. Search for funding, investors, key deals, and financial data for private companies. Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Never use em dash characters in any text you return - use a hyphen or a comma.`,
       messages: [{
         role: "user",
-        content: `Search the web for "${companyName}" — first establish what this company actually is and does, then find business intelligence. Return this exact JSON (use null for fields you cannot find):
+        content: `Search the web for "${companyName}" - first establish what this company actually is and does, then find business intelligence. Return this exact JSON (use null for fields you cannot find):
 {
   "industry": "The company's actual industry/sector based on what you found on their website or reliable sources, e.g. 'Construction Technology / Commissioning Software' or null if genuinely unknown",
-  "companyDescription": "1-2 sentence factual description of what the company does, based on their website or verified sources — NOT inferred from their name. e.g. 'CxAlloy is a cloud-based commissioning management platform used by building engineers and contractors to manage checklists, assets, and reporting.' Return null if you cannot find the company.",
+  "companyDescription": "1-2 sentence factual description of what the company does, based on their website or verified sources - NOT inferred from their name. e.g. 'CxAlloy is a cloud-based commissioning management platform used by building engineers and contractors to manage checklists, assets, and reporting.' Return null if you cannot find the company.",
   "fundingTotal": "Total equity investment received, e.g. $735M or null",
   "investors": ["Investor name and stake if known, e.g. Infratil (53%)"],
   "debtFacilities": "Debt raised, lender, and purpose, e.g. £206M Deutsche Bank for European expansion or null",
@@ -530,9 +530,10 @@ PRIMARY RULES
 - Never narrate reasoning or search activity.
 - If data cannot be verified with high confidence, return null for scalars, [] for arrays, {} for objects.
 - Prefer omission over speculation for executive names, acquisition dates, funding amounts, and customer counts.
-- For well-known public companies, use training knowledge to populate financial figures (revenue, netIncome, marketCap, employees) when explicitly instructed — this is not "inventing data", it is applying known facts.
+- For well-known public companies, use training knowledge to populate financial figures (revenue, netIncome, marketCap, employees) when explicitly instructed - this is not "inventing data", it is applying known facts.
 - Never mix executives between companies.
 - Use concise factual language only.
+- Never use em dash characters in any generated text. Use a hyphen, or reword so a comma does the job.
 - When financial data is supplied in the prompt, treat it as authoritative and use it verbatim.
 
 DATA QUALITY RULES
@@ -549,15 +550,15 @@ MISSING DATA POLICY
 - Unknown objects → {}
 - Never fabricate: funding amounts, acquisition dates, executive names, office locations, or customer counts.
 - Financial figures (revenue, netIncome, marketCap, employees) for well-known public companies: use training knowledge when explicitly instructed, do not return null.
-- WEB INTELLIGENCE blocks in the prompt contain verified live data — always use them verbatim, they override this policy.
+- WEB INTELLIGENCE blocks in the prompt contain verified live data - always use them verbatim, they override this policy.
 
 EXECUTIVE VALIDATION RULES
 Before returning any executive name:
 1. Verify they belong to the correct company.
-2. Verify role recency — exclude former executives.
+2. Verify role recency - exclude former executives.
 3. Exclude any name you cannot verify with high confidence.
 4. Never recombine or invent names from partial recall.
-Quality over quantity — 4 accurate entries is better than 8 with errors.
+Quality over quantity - 4 accurate entries is better than 8 with errors.
 
 NORMALIZATION RULES
 - Currency default: USD unless the company primarily operates in another currency.
@@ -589,7 +590,7 @@ async function runLast30Days(companyName: string): Promise<string | null> {
   ].filter((p): p is string => Boolean(p)).find(fsExistsSync);
 
   if (!skillDir) {
-    console.warn("📡 last30days: engine not installed — run scripts/install-last30days.sh");
+    console.warn("📡 last30days: engine not installed - run scripts/install-last30days.sh");
     return null;
   }
   const scriptPath = path.join(skillDir, "last30days.py");
@@ -604,14 +605,14 @@ async function runLast30Days(companyName: string): Promise<string | null> {
     const clusterSection = result.split("Top clusters:")[1] ?? "";
     const noEvidence = !result || result.includes("No candidates survived") || !/^- /m.test(clusterSection);
     if (noEvidence) {
-      console.warn(`📡 last30days: no usable evidence for "${companyName}" — skipping enrichment`);
+      console.warn(`📡 last30days: no usable evidence for "${companyName}" - skipping enrichment`);
       return null;
     }
     console.log(`📡 last30days: enrichment fetched for "${companyName}" (${result.length} chars)`);
     return result;
   } catch (err: any) {
     const reason = err.code === "ENOENT" ? "python3 not found" : err.killed ? "timed out after 75s" : err.message?.slice(0, 80);
-    console.warn(`📡 last30days: skipped for "${companyName}" — ${reason}`);
+    console.warn(`📡 last30days: skipped for "${companyName}" - ${reason}`);
     return null;
   }
 }
@@ -623,7 +624,7 @@ async function lookupCEO(companyName: string): Promise<string> {
     const message = await client.messages.create({
       model: MODEL_GROUNDED,
       max_tokens: 200,
-      system: "You are a factual lookup assistant. Respond with ONLY the current CEO's full name — no punctuation, no explanation, nothing else.",
+      system: "You are a factual lookup assistant. Respond with ONLY the current CEO's full name - no punctuation, no explanation, nothing else.",
       tools: [{ type: "web_search_20250305", name: "web_search" }],
       messages: [{ role: "user", content: `Who is the current CEO of ${companyName}? Search the web and return only their full name.` }],
     });
@@ -658,7 +659,7 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
       });
 
       if (message.stop_reason === "max_tokens") {
-        console.error(`Response truncated at ${maxTokens} tokens — increase max_tokens`);
+        console.error(`Response truncated at ${maxTokens} tokens - increase max_tokens`);
         throw new Error("Response was too long and got cut off. Please try again.");
       }
 
@@ -688,7 +689,7 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
           repaired = repaired.replace(/,\s*$/, "").replace(/"[^"]*$/, '"..."}');
           repaired += stack.reverse().join("");
           const result = JSON.parse(repaired);
-          console.warn(`⚠️  JSON repair succeeded — response was likely truncated at ${maxTokens} tokens`);
+          console.warn(`⚠️  JSON repair succeeded - response was likely truncated at ${maxTokens} tokens`);
           return result;
         } catch {
           console.error("JSON parse failed (and repair failed). Raw:", cleaned.slice(0, 500));
@@ -699,7 +700,7 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
       if (err?.status === 429 && attempt < 2) {
         const retryAfter = parseInt(err?.headers?.['retry-after'] ?? '60', 10);
         const waitMs = (retryAfter + 3) * 1000;
-        console.warn(`⏳ Rate limited (429) in callClaude — waiting ${retryAfter}s before attempt ${attempt + 2}...`);
+        console.warn(`⏳ Rate limited (429) in callClaude - waiting ${retryAfter}s before attempt ${attempt + 2}...`);
         await new Promise(r => setTimeout(r, waitMs));
         continue;
       }
@@ -713,6 +714,7 @@ async function callClaude(prompt: string, maxTokens: number): Promise<unknown> {
 
 async function generatePartA(
   companyName: string,
+  knownRevenue?: string,
   fmpFinancials?: FMPFinancials | null,
   currentCEO?: string,
   wikiData?: WikipediaData | null,
@@ -725,7 +727,7 @@ async function generatePartA(
 
   let finBlock: string;
   if (fin) {
-    finBlock = `VERIFIED FINANCIAL DATA (Financial Modeling Prep — use verbatim, do not alter):
+    finBlock = `VERIFIED FINANCIAL DATA (Financial Modeling Prep - use verbatim, do not alter):
 - Ticker:               ${fin.ticker}
 - Fiscal Year:          ${fin.fiscalYear}
 - Revenue:              ${fin.revenue}
@@ -757,42 +759,42 @@ Set executiveSummary.employees to exactly: ${fin.employees ?? "null"} - do not u
     if (wikiData.headquarters) wikiLines.push(`- Headquarters:         ${wikiData.headquarters}`);
     if (wikiData.website)      wikiLines.push(`- Website:              ${wikiData.website}`);
 
-    finBlock = `SUPPLEMENTAL DATA (Wikipedia — private/unlisted company; use as directional reference):
+    finBlock = `SUPPLEMENTAL DATA (Wikipedia - private/unlisted company; use as directional reference):
 ${wikiLines.join("\n")}
 
-COMPANY CONTEXT (Wikipedia extract — use to enrich overview, strategy, and market sections):
+COMPANY CONTEXT (Wikipedia extract - use to enrich overview, strategy, and market sections):
 ${wikiData.extract}
 
 Note: This company is private/unlisted. No stock price, market cap, P/E ratio, or analyst ratings are available.
 Use the Wikipedia figures above for revenue, employees, and other available fields. Set executiveSummary.employees verbatim from the Wikipedia figure above if present.
 For unavailable fields (stock price, market cap, EPS, analyst target), return null.`;
   } else if (privateIntel) {
-    // Private/unlisted company — web search ran but found no public financials.
+    // Private/unlisted company - web search ran but found no public financials.
     // Use only what the web search actually found; never fabricate from training knowledge.
     finBlock = `No verified financial data is available for ${companyName} from any external source (FMP, Wikipedia, or web search).
 
-PRIVATE COMPANY FINANCIAL POLICY — STRICTLY ENFORCED:
+PRIVATE COMPANY FINANCIAL POLICY - STRICTLY ENFORCED:
 This is a private or unlisted company. Do NOT use training-knowledge estimates for financial figures.
-- Revenue: ${privateIntel.revenueEstimate ? `use "${privateIntel.revenueEstimate}" (web search estimate — mark clearly as estimated)` : "return null"}
+- Revenue: ${privateIntel.revenueEstimate ? `use "${privateIntel.revenueEstimate}" (web search estimate - mark clearly as estimated)` : "return null"}
 - Return null for: netIncome, ebitda, marketCap, stockPrice, peRatio, epsAnnual, analystTarget, analystRating
 - Return [] for revenueHistory (no historical series available)
 - Set fiscalYear to null
 - DO NOT invent, estimate, or approximate any financial figure not explicitly provided above
 - executiveSummary.employees: ${privateIntel.employees ? `use "${privateIntel.employees}" from web search` : "return null"}`;
   } else {
-    // No data from FMP, Wikipedia, or private intel — last resort for well-known public
+    // No data from FMP, Wikipedia, or private intel - last resort for well-known public
     // companies that FMP couldn't resolve (e.g. large non-US listed companies).
     // ONLY use training knowledge if you are genuinely confident this is a major public company.
     finBlock = `No verified financial data is available from a live API for ${companyName}.
 
-FINANCIALS FROM TRAINING KNOWLEDGE — RESTRICTED USE:
-Only apply this if you are highly confident ${companyName} is a well-known major public company (e.g. FTSE 100, Euro Stoxx 50, Nikkei 225, S&P 500) with reliable published financials in your training data. If you have any doubt — especially if the company name is ambiguous, niche, or unfamiliar — return null for all financial fields rather than guessing.
+FINANCIALS FROM TRAINING KNOWLEDGE - RESTRICTED USE:
+Only apply this if you are highly confident ${companyName} is a well-known major public company (e.g. FTSE 100, Euro Stoxx 50, Nikkei 225, S&P 500) with reliable published financials in your training data. If you have any doubt - especially if the company name is ambiguous, niche, or unfamiliar - return null for all financial fields rather than guessing.
 - Use the company's reporting currency (£ for UK/LSE-listed, € for Eurozone, ¥ for Japan, $ for US). Never convert to USD unless the company reports in USD.
 - For UK retailers specifically: report in £ sterling. Tesco FY2024 revenue ≈68.2B, Sainsbury's ≈31B, Marks & Spencer ≈13B.
 - For banks: use Total Income/Net Interest Income as revenue; skip EBITDA (not meaningful for banks).
 - Return a single value, never a range (e.g. "£68.2B" not "£65B-£72B"). Use your best estimate for the most recent full fiscal year.
 - State the fiscal year you are drawing from (e.g. FY2024, FY2023).
-- Populate revenueHistory for 3-4 years where you have data. NEVER return only one year — this makes the chart useless. For FTSE 100 companies you always have at least 3-4 years of data.
+- Populate revenueHistory for 3-4 years where you have data. NEVER return only one year - this makes the chart useless. For FTSE 100 companies you always have at least 3-4 years of data.
 - UK retailer revenue history examples: Tesco FY2021 £54.8B, FY2022 £61.3B, FY2023 £65.8B, FY2024 £69.9B. Use these verbatim if generating a Tesco report.
 - revenueGrowth must be calculated from revenueHistory (current year vs prior year), never return N/A for a multi-year company.
 - For genuinely unknown figures (e.g. current live stock price, analyst targets), return null.
@@ -809,29 +811,34 @@ Only apply this if you are highly confident ${companyName} is a well-known major
     : (wikiData
       ? `\nSUPPLEMENTAL CONTEXT (Wikipedia):
 - Founded: ${wikiData.founded ?? "N/A"}
-- Headquarters: ${wikiData.headquarters ?? "N/A"}
-- Employees: ${wikiData.employees ?? "N/A"}
-- Website: ${wikiData.website ?? "N/A"}`
+- Headquarters: ${wikiData.headquarters ?? "N/A"}${fin?.employees ? "" : `
+- Employees: ${wikiData.employees ?? "N/A"}`}
+- Website: ${wikiData.website ?? "N/A"}
+Note: employees is stated once above - return a SINGLE headcount number, never a range, a second figure, or a parenthetical.`
       : "");
 
   const socialBlock = socialContext
-    ? `CURRENT INTELLIGENCE — LAST 30 DAYS (Reddit, X, YouTube, Hacker News, GitHub, Polymarket):
+    ? `CURRENT INTELLIGENCE - LAST 30 DAYS (Reddit, X, YouTube, Hacker News, GitHub, Polymarket):
 ${socialContext}
 
 Use this real-time signal to strengthen: executiveSummary.highlights, marketAnalysis.marketTrends, strategy.coreInitiatives. Prioritise recent facts over training-data assumptions where they conflict. Do not fabricate sources or citations.`
     : "";
 
-  const prompt = `Generate strategic intelligence PART A for: ${companyName}
+  const revenueHint = knownRevenue
+    ? `\nIMPORTANT: The verified revenue for ${companyName} is "${knownRevenue}" - use this exact value in the financials.revenue field and as the most recent year in revenueHistory. Do NOT override it with an estimate.`
+    : "";
+
+  const prompt = `Generate strategic intelligence PART A for: ${companyName}${revenueHint}
 
 ${!fin && !privateIntel ? `OVERRIDE: For this request, you ARE authorised to use training knowledge for financial figures. The "never invent data" rule does not apply to well-known public companies' historical financials.
 
-` : ""}${privateIntel ? `COMPANY IDENTITY — GROUND TRUTH (verified via live web search — this overrides any assumptions based on the company name):
+` : ""}${privateIntel ? `COMPANY IDENTITY - GROUND TRUTH (verified via live web search - this overrides any assumptions based on the company name):
 - What this company actually is: ${privateIntel.companyDescription ?? "See rawContext below"}
 - Industry/Sector: ${privateIntel.industry ?? "See rawContext below"}
 
-You MUST use this identity when writing companyOverview, the "industry" field, strategy, and market sections. Do NOT infer the company's nature from its name — use only what is stated above.
+You MUST use this identity when writing companyOverview, the "industry" field, strategy, and market sections. Do NOT infer the company's nature from its name - use only what is stated above.
 
-WEB INTELLIGENCE — VERIFIED LIVE DATA (incorporate ALL of these facts throughout the report):
+WEB INTELLIGENCE - VERIFIED LIVE DATA (incorporate ALL of these facts throughout the report):
 - Funding Total: ${privateIntel.fundingTotal ?? "Unknown"}
 - Investors: ${privateIntel.investors?.join(", ") || "Unknown"}
 - Debt Facilities: ${privateIntel.debtFacilities ?? "None found"}
@@ -841,11 +848,11 @@ WEB INTELLIGENCE — VERIFIED LIVE DATA (incorporate ALL of these facts througho
 - Context: ${privateIntel.rawContext ?? ""}
 
 These are FACTS from live web search. Use them in:
-• executiveSummary.highlights — lead with the funding/investor story and key deals
-• financials.revenue — use the revenue estimate above
-• executiveSummary.employees — use the employee count above
-• strategy.coreInitiatives — reference the key deals
-• marketAnalysis — reference investor backing as a competitive strength
+• executiveSummary.highlights - lead with the funding/investor story and key deals
+• financials.revenue - use the revenue estimate above
+• executiveSummary.employees - use the employee count above
+• strategy.coreInitiatives - reference the key deals
+• marketAnalysis - reference investor backing as a competitive strength
 
 ` : ""}${socialBlock ? socialBlock + "\n\n" : ""}EXECUTIVE INSTRUCTIONS
 - Set executiveSummary.ceo to exactly: ${ceo}
@@ -853,11 +860,11 @@ These are FACTS from live web search. Use them in:
 - keyExecutives: 3–8 other verified senior leaders (CFO, COO, CTO, division presidents). Real names only. Omit anyone you cannot verify. Never invent or recombine names.
 
 STRATEGY INSTRUCTIONS
-- vision and mission must be populated for all well-known public companies — this data is always available in annual reports, investor relations pages, or company websites.
+- vision and mission must be populated for all well-known public companies - this data is always available in annual reports, investor relations pages, or company websites.
 - Never return "" (empty string) for vision or mission. Use the company's actual stated purpose, tagline, or strategic intent.
 - For financial institutions specifically: Barclays purpose → "Deploying finance responsibly to support people and businesses acting with empathy and integrity"; HSBC purpose → "Opening up a world of opportunity"; Lloyds → "Helping Britain Prosper"; JPMorgan → "Making dreams possible for everyone everywhere".
 - For tech: Apple → "To make the best products on earth"; Microsoft → "To empower every person and organisation on the planet to achieve more"; Google → "To organise the world's information and make it universally accessible".
-- If the exact statement is uncertain, derive a concise purpose statement from the company's known business model, market position, and sector — do not leave blank.
+- If the exact statement is uncertain, derive a concise purpose statement from the company's known business model, market position, and sector - do not leave blank.
 - For any company you know enough about to generate a report, you know enough to write a one-sentence vision and mission. Treat these as required fields.
 - Only return null for genuinely unknown private companies where you have minimal information.
 
@@ -883,13 +890,13 @@ Return ONLY this JSON:
     "lastUpdated": "Today dd/mm/yyyy"
   },
   "financials": {
-    "revenue": "e.g. $391.0B or null",
-    "revenueGrowth": "e.g. +8.1% YoY or null",
-    "netIncome": "e.g. $93.7B or null",
-    "ebitda": "e.g. $125.8B or null",
-    "marketCap": "e.g. $3.4T or null",
-    "stockTicker": "e.g. AAPL or null",
-    "stockPrice": "e.g. $225.00 or null",
+    "revenue": "e.g. $391.0B - for banks/financial institutions use Net Banking Income (NBI) as the primary revenue metric and label it, e.g. '€395.7M (NBI)'",
+    "revenueGrowth": "e.g. +8.1% YoY",
+    "netIncome": "e.g. $93.7B",
+    "ebitda": "e.g. $125.8B - for banks use operating profit or pre-tax profit instead if EBITDA is not reported",
+    "marketCap": "e.g. $3.4T",
+    "stockTicker": "e.g. AAPL",
+    "stockPrice": "e.g. $225.00",
     "fiscalYear": "e.g. FY2024",
     "keyMetrics": [
       {"label": "Gross Margin", "value": "45.2%", "trend": "up"},
@@ -898,7 +905,7 @@ Return ONLY this JSON:
       {"label": "EPS", "value": "$6.11", "trend": "up"}
     ],
     "revenueHistory": [
-      {"year": "2021", "revenue": "$X.XB", "growth": "+X%"},
+      {"year": "2021", "revenue": "$X.XB or €X.XM (NBI) for banks", "growth": "+X%"},
       {"year": "2022", "revenue": "$X.XB", "growth": "+X%"},
       {"year": "2023", "revenue": "$X.XB", "growth": "+X%"},
       {"year": "2024", "revenue": "$X.XB", "growth": "+X%"}
@@ -906,8 +913,8 @@ Return ONLY this JSON:
     "outlook": "2-sentence financial outlook or null"
   },
   "strategy": {
-    "vision": "Company's stated vision or purpose — never empty string, use null only if genuinely undiscoverable",
-    "mission": "Company's stated mission or strategic purpose — never empty string, use null only if genuinely undiscoverable",
+    "vision": "Company's stated vision or purpose - never empty string, use null only if genuinely undiscoverable",
+    "mission": "Company's stated mission or strategic purpose - never empty string, use null only if genuinely undiscoverable",
     "coreInitiatives": [{"title": "Initiative name", "description": "Brief description", "timeline": "e.g. 2024-2026"}],
     "geographicFocus": ["Region 1", "Region 2", "Region 3"],
     "mAndA": "M&A strategy description or null",
@@ -933,11 +940,12 @@ Return ONLY this JSON:
   return callClaude(prompt, 8000);
 }
 
+
 // ─── Report Part B: tech + ESG + SWOT + growth + risk + digital ──────────────
 
 async function generatePartB(companyName: string, esgData?: FMPESGData | null, socialContext?: string | null, privateIntel?: PrivateCompanyIntel | null): Promise<unknown> {
   const esgBlock = esgData
-    ? `VERIFIED ESG DATA (Financial Modeling Prep — use verbatim, do not alter):
+    ? `VERIFIED ESG DATA (Financial Modeling Prep - use verbatim, do not alter):
 - ESG Rating:          ${esgData.esgRating}
 - ESG Score:           ${esgData.esgScore.toFixed(1)} / 100
 - ESG Risk Level:      ${esgData.esgRisk}
@@ -953,21 +961,21 @@ Use your training knowledge to populate the ESG fields. For large, publicly repo
 - Net Zero targets, environmental commitments, and governance practices from annual/sustainability reports
 - Board diversity figures from corporate governance disclosures
 - ESG risk assessments from major rating agencies
-Fill in every field you can substantiate. Only return null for fields where you genuinely have no basis for an estimate — not as a precautionary default.`;
+Fill in every field you can substantiate. Only return null for fields where you genuinely have no basis for an estimate - not as a precautionary default.`;
 
   const socialBlock = socialContext
-    ? `CURRENT INTELLIGENCE — LAST 30 DAYS (Reddit, X, YouTube, Hacker News, GitHub, Polymarket):
+    ? `CURRENT INTELLIGENCE - LAST 30 DAYS (Reddit, X, YouTube, Hacker News, GitHub, Polymarket):
 ${socialContext}
 
 Use this real-time signal to strengthen: swot (opportunities and threats especially), riskAssessment.risks, growthOpportunities.opportunities, digitalTransformation. Prioritise recent facts over training-data assumptions where they conflict. Do not fabricate sources or citations.`
     : "";
 
-  // Identity grounding — same ground-truth block as Part A, prevents Part B from
+  // Identity grounding - same ground-truth block as Part A, prevents Part B from
   // pattern-matching on the company name for SWOT / growth / risk sections.
   const identityBlock = (privateIntel?.industry || privateIntel?.companyDescription)
-    ? `COMPANY IDENTITY — GROUND TRUTH (verified via live web search — this overrides any assumptions based on the company name):
-- What this company actually is: ${privateIntel?.companyDescription ?? "Not specified — rely on the industry/sector below"}
-- Industry/Sector: ${privateIntel?.industry ?? "Not specified — rely on the description above"}
+    ? `COMPANY IDENTITY - GROUND TRUTH (verified via live web search - this overrides any assumptions based on the company name):
+- What this company actually is: ${privateIntel?.companyDescription ?? "Not specified - rely on the industry/sector below"}
+- Industry/Sector: ${privateIntel?.industry ?? "Not specified - rely on the description above"}
 
 You MUST use this identity when writing swot, growthOpportunities, riskAssessment, and digitalTransformation. Do NOT infer the company's nature from its name.
 
@@ -1131,16 +1139,16 @@ function computeConfidence(
     warns > 2  || score < 70 ? "amber" : "green";
 
   const summary =
-    rating === "green" ? "High confidence — verified data across all key sections." :
-    rating === "amber" ? `Moderate confidence — ${warns} section(s) could not be fully verified.` :
-    `Low confidence — significant data gaps detected. Treat with caution.`;
+    rating === "green" ? "High confidence - verified data across all key sections." :
+    rating === "amber" ? `Moderate confidence - ${warns} section(s) could not be fully verified.` :
+    `Low confidence - significant data gaps detected. Treat with caution.`;
 
   return { rating, score, signals, summary };
 }
 
 // ─── Public: generate full report ─────────────────────────────────────────────
 
-export async function generateReport(companyName: string): Promise<unknown> {
+export async function generateReport(companyName: string, knownRevenue?: string): Promise<unknown> {
   const start = Date.now();
 
   const [fmpData, currentCEO, wikiData, socialContext] = await Promise.all([
@@ -1172,32 +1180,56 @@ export async function generateReport(companyName: string): Promise<unknown> {
     console.log(`👥 Employees from FMP: ${financials.employees}`);
   }
 
-  const partA = await generatePartA(companyName, financials, currentCEO, wikiData, socialContext, privateIntel);
+  const partA = await generatePartA(companyName, knownRevenue, financials, currentCEO, wikiData, socialContext, privateIntel);
   const partB = await generatePartB(companyName, fmpData.esg, socialContext, privateIntel);
 
   console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (FMP + Wiki + CEO + Haiku x2)`);
 
-  // Sanitise LLM financial output — reject ranges and USD for known UK companies
+  // Sanitise LLM financial output - reject ranges and USD for known UK companies
   const partATyped = partA as any;
   if (partATyped?.financials) {
     const f = partATyped.financials;
-    // If revenue contains a range (–) or em dash, strip to first value
-    if (typeof f.revenue === 'string' && (f.revenue.includes('–') || f.revenue.includes('-'))) {
-      const first = f.revenue.split(/[–-]/)[0].trim();
-      console.warn(`⚠️  Revenue range detected ("${f.revenue}") — using first value: "${first}"`);
+    // If revenue contains a range, strip to the first value. Covers hyphen,
+    // en dash and em dash - the comment used to claim em dash but the pattern
+    // never included one.
+    if (typeof f.revenue === 'string' && /[\u2014\u2013-]/.test(f.revenue)) {
+      const first = f.revenue.split(/[\u2014\u2013-]/)[0].trim();
+      console.warn(`⚠️  Revenue range detected ("${f.revenue}") - using first value: "${first}"`);
       f.revenue = first;
-    }
-    if (typeof f.employees === 'string' && (f.employees.includes('–') || f.employees.includes('-') || f.employees.includes('+'))) {
-      const first = f.employees.split(/[–\-+]/)[0].replace(/[^0-9,]/g, '').trim();
-      if (first) {
-        console.warn(`⚠️  Employees range detected ("${f.employees}") — using first value: "${first}"`);
-        f.employees = first;
-      }
     }
     // Warn if revenue history is too short
     const histLen = Array.isArray(f.revenueHistory) ? f.revenueHistory.length : 0;
     if (histLen < 2) {
-      console.warn(`⚠️  Revenue history only ${histLen} entr${histLen === 1 ? 'y' : 'ies'} for ${companyName} — chart will be sparse`);
+      console.warn(`⚠️  Revenue history only ${histLen} entr${histLen === 1 ? 'y' : 'ies'} for ${companyName} - chart will be sparse`);
+    }
+  }
+
+  // Normalise headcount. The model returns shapes like "330,000", "c. 330,000",
+  // "330,000–342,423" or "330,000 (342,423 incl. franchises)". Keep the first
+  // numeric group only - anything else gets mangled downstream.
+  if (partATyped?.executiveSummary) {
+    const es = partATyped.executiveSummary;
+    if (financials?.employees) {
+      // FMP is authoritative - don't let the model pick between conflicting sources
+      const fmpCount = String(financials.employees).replace(/[^0-9]/g, '');
+      if (fmpCount && String(es.employees ?? '').replace(/[^0-9]/g, '') !== fmpCount) {
+        console.warn(`⚠️  Employees "${es.employees}" replaced with FMP figure ${financials.employees}`);
+      }
+      es.employees = Number(fmpCount).toLocaleString('en-GB');
+    } else if (es.employees != null && es.employees !== '') {
+      const raw = String(es.employees).trim();
+      const match = raw.match(/\d[\d,]*/);
+      const n = match ? parseInt(match[0].replace(/,/g, ''), 10) : NaN;
+      if (Number.isFinite(n) && n > 0 && n <= 50_000_000) {
+        const normalised = n.toLocaleString('en-GB');
+        if (normalised !== raw) {
+          console.warn(`⚠️  Employees normalised: "${raw}" - using ${normalised}`);
+        }
+        es.employees = normalised;
+      } else {
+        console.warn(`⚠️  Employees value not a usable count ("${raw}") - setting null`);
+        es.employees = null;
+      }
     }
   }
 
@@ -1221,7 +1253,7 @@ export async function generateReport(companyName: string): Promise<unknown> {
         retrievedAt: now,
       };
     }
-    // LLM training knowledge — check what was actually returned
+    // LLM training knowledge - check what was actually returned
     const partATyped2 = partA as any;
     const llmRevenue = partATyped2?.financials?.revenue;
     // Revenue is present if it's a non-empty string that isn't null/N/A
@@ -1316,6 +1348,137 @@ Return ONLY this JSON:
 }`;
 
   return callClaude(prompt, 5000);
+}
+
+// ─── City Company Search ──────────────────────────────────────────────────────
+
+export interface CityCompany {
+  name: string;
+  url: string;
+  distanceKm: number;
+  distanceBand: "core" | "good" | "optional";
+  revenue: string;
+  isPrivate: boolean;
+  ticker: string; // "Private" if unlisted, else e.g. "NYSE: AAPL"
+  description: string;
+}
+
+export interface CitySearchResult {
+  city: string;
+  country: string;
+  companies: CityCompany[];
+}
+
+export async function generateCitySearch(
+  country: string,
+  city: string,
+  context?: string,
+  excludeNames: string[] = [],
+  limit = 20
+): Promise<CitySearchResult> {
+  const contextClause = context?.trim()
+    ? `\n\nAdditional search context (use this to refine which companies are most relevant): ${context.trim()}`
+    : "";
+
+  const excludeClause = excludeNames.length > 0
+    ? `\n\nDo NOT include any of these companies (already shown): ${excludeNames.map(n => `"${n}"`).join(", ")}.`
+    : "";
+
+  const message = await client.messages.create({
+    model: MODEL_GROUNDED,
+    max_tokens: 4000,
+    system: `You are a company research analyst. Search the web to find accurate, real companies.
+Respond with ONLY valid JSON - no prose, no markdown fences, no explanation.
+Do NOT invent companies. Only include companies you can verify exist.
+All revenue figures should be the most recent publicly available annual revenue.
+For private companies that do not disclose revenue, use "Undisclosed".
+For stock tickers, use the format "EXCHANGE: TICKER" (e.g. "NYSE: AAPL", "LSE: HSBA", "NASDAQ: MSFT"). Use "Private" if the company is not publicly listed.
+Never use em dash characters in any text you return - use a hyphen or a comma.`,
+    tools: [{ type: "web_search_20250305" as const, name: "web_search" }],
+    messages: [
+      {
+        role: "user",
+        content: `Search for significant companies located in or near ${city}, ${country}. Cast a wide net - include companies headquartered there, major regional offices, large employers, and well-known local businesses. For smaller cities include companies in the surrounding region up to 100km away.${contextClause}${excludeClause}
+
+Return as many real, verifiable companies as you can find - aim for up to ${limit} but return fewer if that is all you can verify. ALWAYS return the JSON structure below even if the companies array has only a few entries. Do NOT return an explanation or note instead of the JSON.
+
+For each company:
+- Name: official company name
+- URL: main website (https://...)
+- Distance from ${city} city centre in km (approximate)
+- Revenue: most recent annual revenue (e.g. "$2.3B", "£450M"). For banks and financial institutions where total revenue is undisclosed, use Net Banking Income instead and label it clearly (e.g. "€300M (NBI)"). For all other companies where revenue is genuinely undisclosed, use "Undisclosed"
+- isPrivate: true if not publicly listed on any stock exchange
+- Ticker: stock exchange and ticker symbol (e.g. "NYSE: AAPL", "LSE: HSBA") - use "Private" if not listed
+- Description: one sentence about what the company does
+
+Distance band rules:
+- "core" = within 20km (very favourable - search here first)
+- "good" = 21–50km (good candidates)
+- "optional" = 51–100km (borderline)
+
+Sort results by distanceKm ascending.
+
+Return ONLY this JSON:
+{
+  "city": "${city}",
+  "country": "${country}",
+  "companies": [
+    {
+      "name": "Company Name",
+      "url": "https://example.com",
+      "distanceKm": 2,
+      "distanceBand": "core",
+      "revenue": "$5.2B",
+      "isPrivate": false,
+      "ticker": "NYSE: EX",
+      "description": "One sentence description of what the company does."
+    }
+  ]
+}`,
+      },
+    ],
+  });
+
+  const rawText = message.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .replace(/<cite[^>]*>([\s\S]*?)<\/cite>/g, "$1")
+    .trim();
+
+  // Model sometimes narrates before emitting JSON - slice from the first `{`
+  const jsonStart = rawText.indexOf("{");
+  if (jsonStart === -1) {
+    console.error("City search: no JSON object in response. Raw:", rawText.slice(0, 500));
+    throw new Error("Failed to parse city search response. Please try again.");
+  }
+  const cleaned = rawText.slice(jsonStart).replace(/\n?```$/, "").trim();
+
+  try {
+    const parsed = JSON.parse(cleaned) as CitySearchResult;
+    // Model sometimes returns an explanation object instead of the companies schema
+    if (!Array.isArray(parsed.companies)) {
+      console.warn("City search: response lacked companies array - returning empty result. Raw:", cleaned.slice(0, 300));
+      return { city, country, companies: [] };
+    }
+    // Normalise each company to guarantee required fields
+    parsed.companies = parsed.companies.map((c) => ({
+      name: c.name ?? "Unknown",
+      url: c.url ?? "",
+      distanceKm: typeof c.distanceKm === "number" ? c.distanceKm : 0,
+      distanceBand: (["core", "good", "optional"] as const).includes(c.distanceBand)
+        ? c.distanceBand
+        : "core",
+      revenue: c.revenue ?? "Undisclosed",
+      isPrivate: Boolean(c.isPrivate),
+      ticker: c.ticker ?? "Private",
+      description: c.description ?? "",
+    }));
+    return parsed;
+  } catch {
+    console.error("City search JSON parse failed. Raw:", cleaned.slice(0, 500));
+    throw new Error("Failed to parse city search response. Please try again.");
+  }
 }
 
 // ─── Investor Presentation ────────────────────────────────────────────────────

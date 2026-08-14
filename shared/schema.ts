@@ -42,6 +42,8 @@ export const reports = pgTable("reports", {
   companyName: text("company_name").notNull(),
   companySlug: text("company_slug").notNull().unique(),
   industry: text("industry"),
+  country: text("country"),
+  city: text("city"),
   reportData: jsonb("report_data"),
   salesEnablementData: jsonb("sales_enablement_data"),
   generatedAt: timestamp("generated_at").defaultNow(),
@@ -230,7 +232,7 @@ export type DigitalTransformation = z.infer<typeof DigitalTransformationSchema>;
 // ─── Auth Zod Schemas ─────────────────────────────────────────────────────────
 
 // Single magic-link request form. First-time users supply name/company;
-// returning users can leave them blank — we ignore them.
+// returning users can leave them blank - we ignore them.
 export const RequestLinkSchema = z.object({
   email: z.string().email(),
   firstName: z.string().trim().min(1).max(80).optional(),

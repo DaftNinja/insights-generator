@@ -80,7 +80,7 @@ def _log(msg: str):
 def _extract_core_subject(topic: str) -> str:
     """Extract core subject from verbose query for X search.
 
-    X search is literal keyword AND matching — all words must appear.
+    X search is literal keyword AND matching - all words must appear.
     Aggressively strip question/meta/research words to keep only the
     core product/concept name (max 5 words).
     """
@@ -158,7 +158,7 @@ def _invoke_bird_subprocess(query: str, count: int, timeout: int):
     """Invoke the vendored bird-search.mjs subprocess once.
 
     Returns (result, error_dict). If error_dict is non-None, treat it as the
-    final result and do not retry — those errors are terminal (timeout,
+    final result and do not retry - those errors are terminal (timeout,
     spawn failure). If error_dict is None, the subprocess ran to completion
     and `result` is the SubprocResult; the caller decides whether to retry
     based on the result.stdout content.
@@ -268,7 +268,7 @@ def _run_bird_search(query: str, count: int, timeout: int) -> Dict[str, Any]:
             return {"items": parsed}
         return parsed
 
-    # Defensive fallthrough — loop should always return above.
+    # Defensive fallthrough - loop should always return above.
     return {
         "error": f"Bird search exhausted retries: {last_decode_error}",
         "items": [],

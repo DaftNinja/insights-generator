@@ -1,7 +1,7 @@
 """YouTube search and transcript extraction via yt-dlp for the v3.0.0 pipeline.
 
 Uses yt-dlp (https://github.com/yt-dlp/yt-dlp) for both YouTube search and
-transcript extraction. No API keys needed — just have yt-dlp installed.
+transcript extraction. No API keys needed - just have yt-dlp installed.
 
 Inspired by Peter Steinberger's toolchain approach (yt-dlp + summarize CLI).
 """
@@ -100,7 +100,7 @@ def _log(msg: str):
 def is_ytdlp_installed() -> bool:
     """Check if yt-dlp is available locally, or if SSH routing is configured.
 
-    When LAST30DAYS_YOUTUBE_SSH_HOST is set, returns True without a local check —
+    When LAST30DAYS_YOUTUBE_SSH_HOST is set, returns True without a local check -
     yt-dlp lives on the remote host. Failures surface naturally on first use.
     """
     if _ytdlp_ssh_host():
@@ -108,7 +108,7 @@ def is_ytdlp_installed() -> bool:
     return shutil.which("yt-dlp") is not None
 
 
-# Host aliases must be plain hostnames / SSH config aliases — no flags, no
+# Host aliases must be plain hostnames / SSH config aliases - no flags, no
 # shell metacharacters. Rejects any value that could be reinterpreted by ssh
 # (or the surrounding shell) as something other than a destination.
 _SSH_HOST_ALIAS_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
@@ -172,7 +172,7 @@ def _extract_core_subject(topic: str) -> str:
     """Extract core subject from verbose query for YouTube search.
 
     NOTE: 'tips', 'tricks', 'tutorial', 'guide', 'review', 'reviews'
-    are intentionally KEPT — they're YouTube content types that improve search.
+    are intentionally KEPT - they're YouTube content types that improve search.
     """
     from .query import extract_core_subject
     # YouTube-specific noise set: smaller than default, keeps content-type words
@@ -184,7 +184,7 @@ def _extract_core_subject(topic: str) -> str:
         'recommendations', 'advice',
         'prompt', 'prompts', 'prompting',
         'methods', 'strategies', 'approaches',
-        # Temporal/meta words — planner generates these but they don't
+        # Temporal/meta words - planner generates these but they don't
         # appear in YouTube titles, so strip them for better search.
         'last', 'days', 'recent', 'recently', 'month', 'week',
         'january', 'february', 'march', 'april', 'may', 'june',
@@ -240,7 +240,7 @@ def expand_youtube_queries(topic: str, depth: str) -> List[str]:
     elif qtype == "how_to":
         queries.append(f"{core} tutorial OR guide OR explained")
     else:
-        # breaking_news / general — YouTube content types
+        # breaking_news / general - YouTube content types
         queries.append(f"{core} review OR reaction OR breakdown")
 
     # Deep depth: add full-length content variant
@@ -279,7 +279,7 @@ def search_youtube(
     _log(f"Searching YouTube for '{core_topic}' (since {from_date}, count={count})")
 
     # yt-dlp search with full metadata (no --flat-playlist so dates are real).
-    # NOTE: --dateafter intentionally omitted — YouTube search returns
+    # NOTE: --dateafter intentionally omitted - YouTube search returns
     # relevance-sorted results and strict date filtering returns 0 for
     # evergreen topics. Python soft filter (below) handles date filtering.
     cmd = [
@@ -662,7 +662,7 @@ def search_and_transcribe(
     Returns:
         Dict with 'items' list. Each item has a 'transcript_snippet' field.
     """
-    # Step 1: Multi-query search — run yt-dlp for each expanded query
+    # Step 1: Multi-query search - run yt-dlp for each expanded query
     queries = expand_youtube_queries(topic, depth)
     seen_ids: Set[str] = set()
     items: List[Dict[str, Any]] = []

@@ -503,7 +503,7 @@ def search_and_enrich(
                     seen_ids.add(vid)
                     items.append(item)
 
-    # Step 1: Multi-query keyword search — run ScrapeCreators for each expanded query
+    # Step 1: Multi-query keyword search - run ScrapeCreators for each expanded query
     queries = expand_instagram_queries(topic, depth)
     for q in queries:
         search_result = search_instagram(q, from_date, to_date, depth, token)

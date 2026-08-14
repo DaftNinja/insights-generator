@@ -49,8 +49,8 @@ export function Home() {
         </h1>
 
         <p className="animate-fade-up animate-delay-200 mb-8 max-w-xl text-base sm:text-lg text-[var(--text-secondary)] px-4">
-          Enter any company name. Get a full strategic analysis — financials, market position,
-          tech stack, SWOT, risks, and growth opportunities — in under 60 seconds.
+          Enter any company name. Get a full strategic analysis - financials, market position,
+          tech stack, SWOT, risks, and growth opportunities - in under 60 seconds.
         </p>
 
         {/* Search */}
@@ -167,7 +167,7 @@ export function Home() {
         <div className="rounded-lg border border-blue-200 bg-blue-50 px-5 py-7 sm:px-8 sm:py-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-base sm:text-lg font-semibold text-[var(--text-primary)] mb-1.5">Export in any format</h3>
-            <p className="text-[var(--text-secondary)] text-sm">PDF, PowerPoint, or HTML — ready for client presentations and briefs.</p>
+            <p className="text-[var(--text-secondary)] text-sm">PDF, PowerPoint, or HTML - ready for client presentations and briefs.</p>
           </div>
           <div className="flex gap-2 sm:gap-3 shrink-0">
             {["PDF", "PPTX", "HTML"].map((fmt) => (

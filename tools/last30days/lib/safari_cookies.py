@@ -34,13 +34,13 @@ def _parse_cookie_record(data: bytes) -> dict | None:
         return None
     try:
         (size,) = struct.unpack("<I", data[0:4])
-        # flags at offset 4 (4 bytes, little-endian) — not needed for extraction
+        # flags at offset 4 (4 bytes, little-endian) - not needed for extraction
         (url_offset,) = struct.unpack("<I", data[16:20])
         (name_offset,) = struct.unpack("<I", data[20:24])
         (path_offset,) = struct.unpack("<I", data[24:28])
         (value_offset,) = struct.unpack("<I", data[28:32])
-        # expiry at offset 40 (8-byte double, little-endian) — not needed for filtering
-        # creation at offset 48 (8-byte double, little-endian) — not needed
+        # expiry at offset 40 (8-byte double, little-endian) - not needed for filtering
+        # creation at offset 48 (8-byte double, little-endian) - not needed
 
         url = _read_null_terminated(data, url_offset)
         name = _read_null_terminated(data, name_offset)

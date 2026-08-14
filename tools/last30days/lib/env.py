@@ -117,7 +117,7 @@ def _load_keychain(keys: list[str]) -> dict[str, str]:
 
     Each key is looked up as a generic password with service name
     ``f"{KEYCHAIN_SERVICE_PREFIX}{key}"`` for the current user. Missing items
-    and lookup failures are silent — Keychain is the lowest-priority source
+    and lookup failures are silent - Keychain is the lowest-priority source
     and is meant to be additive over `.env` files and process environment.
     """
     import platform
@@ -612,7 +612,7 @@ def is_threads_available(config: dict[str, Any]) -> bool:
     """Check if Threads source is available.
 
     Returns True when SCRAPECREATORS_API_KEY is set. Threads runs alongside
-    TikTok and Instagram as part of the SC family — same key, same per-call
+    TikTok and Instagram as part of the SC family - same key, same per-call
     cost shape, so the same default-on rule applies. Suppress via
     EXCLUDE_SOURCES=threads.
     """

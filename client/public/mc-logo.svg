@@ -1,17 +1,44 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 160" fill="none">
-  <!-- MC Monogram -->
-  <g transform="translate(130, 8)">
-    <!-- M letterform -->
-    <text x="0" y="72" font-family="Georgia, 'Times New Roman', serif" font-size="88" font-weight="700" fill="#1C2B5C" letter-spacing="-2">M</text>
-    <!-- C letterform overlapping, slightly offset right and down -->
-    <text x="44" y="82" font-family="Georgia, 'Times New Roman', serif" font-size="56" font-weight="400" fill="#8A8FA5">C</text>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 160" fill="none">
+  <!-- Google Font: Rajdhani-style modern sans -->
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@700&amp;family=Rajdhani:wght@400&amp;display=swap');
+    </style>
+  </defs>
 
-  <!-- MAUDSLAY wordmark -->
-  <text x="200" y="120" font-family="Georgia, 'Times New Roman', serif" font-size="22" font-weight="700" fill="#1C2B5C" letter-spacing="8" text-anchor="middle">MAUDSLAY</text>
+  <!-- "Maudslay" wordmark: M has a red left-leg accent, rest is black -->
+  <!-- Red accent slash on M (left diagonal leg) -->
+  <polygon points="14,16 33,16 52,80 14,80" fill="#CC0000"/>
 
-  <!-- Decorative rules + CONSULTING -->
-  <line x1="68" y1="138" x2="118" y2="138" stroke="#8A8FA5" stroke-width="1"/>
-  <text x="200" y="143" font-family="Georgia, 'Times New Roman', serif" font-size="11" font-weight="400" fill="#8A8FA5" letter-spacing="6" text-anchor="middle">CONSULTING</text>
-  <line x1="282" y1="138" x2="332" y2="138" stroke="#8A8FA5" stroke-width="1"/>
+  <!-- Full M in black (drawn over red to create the split effect) -->
+  <!-- Left outer stroke -->
+  <polygon points="14,16 30,16 30,80 14,80" fill="#CC0000"/>
+  <!-- Left inner leg of M -->
+  <polygon points="30,16 47,16 68,56 52,56" fill="#111111"/>
+  <!-- Center peak of M -->
+  <polygon points="47,16 74,16 74,80 58,80 58,36 47,56 37,56 50,36" fill="#111111"/>
+  <!-- Right inner leg -->
+  <polygon points="74,16 91,16 112,56 95,56" fill="#111111"/>
+  <!-- Right outer stroke -->
+  <polygon points="91,16 108,16 108,80 91,80" fill="#111111"/>
+  <!-- Fill center of M -->
+  <polygon points="30,16 108,16 108,30 30,30" fill="#111111"/>
+
+  <!-- "audslay" text - using SVG text with fallback fonts similar to the logo -->
+  <text x="114" y="76"
+        font-family="'Rajdhani', 'Barlow Condensed', 'Arial Narrow', Arial, sans-serif"
+        font-size="66"
+        font-weight="700"
+        fill="#111111"
+        letter-spacing="1">audslay</text>
+
+  <!-- "CONSULTING" text with horizontal rule -->
+  <text x="15" y="108"
+        font-family="'Rajdhani', 'Barlow Condensed', 'Arial Narrow', Arial, sans-serif"
+        font-size="16"
+        font-weight="400"
+        fill="#111111"
+        letter-spacing="5">CONSULTING</text>
+  <!-- Horizontal rule after CONSULTING -->
+  <line x1="158" y1="103" x2="420" y2="103" stroke="#111111" stroke-width="1.5"/>
 </svg>

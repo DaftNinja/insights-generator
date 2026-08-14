@@ -2,7 +2,7 @@
 
 Mirrors the `resolve.auto_resolve()` pattern: fan out 2-3 web searches via
 `grounding.web_search()`, then extract capitalized entity candidates from
-titles and snippets with deterministic text mining. No LLM call — the
+titles and snippets with deterministic text mining. No LLM call - the
 hosting reasoning model can always override discovery via
 `--competitors-list`.
 
@@ -33,7 +33,7 @@ _CAPITALIZED_PHRASE = re.compile(
     rf"\b{_BRAND_TOKEN}(?:\s+{_BRAND_TOKEN}){{0,3}}\b"
 )
 
-# Title-case fillers common in listicle SERPs. Kept flat — extraction
+# Title-case fillers common in listicle SERPs. Kept flat - extraction
 # rejects a candidate whose entire tokens are stopwords, not candidates
 # that merely contain one.
 _STOPWORD_TOKENS: frozenset[str] = frozenset(
@@ -149,7 +149,7 @@ def discover_competitors(
     Args:
         topic: The primary research topic.
         count: Desired number of competitor entities (1..N).
-        config: Runtime config dict — expects the same shape as the engine
+        config: Runtime config dict - expects the same shape as the engine
             config (BRAVE_API_KEY / EXA_API_KEY / SERPER_API_KEY / etc.).
         lookback_days: Date range for freshness. Defaults to 30.
 

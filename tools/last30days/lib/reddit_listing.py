@@ -1,4 +1,4 @@
-"""Keyless Reddit listing scrape via shreddit /svc partials — with real scores.
+"""Keyless Reddit listing scrape via shreddit /svc partials - with real scores.
 
 The subreddit listing partial
 ``/svc/shreddit/community-more-posts/{sort}/?name={sub}[&t={range}]`` serves
@@ -143,7 +143,7 @@ def fetch_listings(
 ) -> List[Dict[str, Any]]:
     """Fetch scored post cards across subreddits × depth-appropriate sorts.
 
-    Returns deduped normalized posts (with real scores), unranked/unsliced —
+    Returns deduped normalized posts (with real scores), unranked/unsliced -
     the caller merges these with other sources, ranks, and slices.
     """
     if not subreddits:

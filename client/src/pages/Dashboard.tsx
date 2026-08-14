@@ -3,7 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { Layout } from "@/components/Layout";
 import { api } from "@/lib/api";
 import { exportToPDF, exportToPPTX, exportToHTML } from "@/lib/export";
-import { formatDate, getRiskBadge, getMaturityColor, getConfidenceColor } from "@/lib/utils";
+import { formatDate, getRiskBadge, getMaturityColor, getConfidenceColor, formatHeadcount } from "@/lib/utils";
 import { MetricCard } from "@/components/MetricCard";
 import { SWOTGrid } from "@/components/SWOTGrid";
 import { RiskMatrix } from "@/components/RiskMatrix";
@@ -132,7 +132,7 @@ export function Dashboard() {
               </p>
             </div>
 
-            {/* Actions — wrap on mobile */}
+            {/* Actions - wrap on mobile */}
             <div className="flex flex-wrap gap-2 shrink-0">
               <button onClick={handleRefresh} disabled={refreshing} className="btn-secondary">
                 {refreshing ? (
@@ -229,7 +229,7 @@ function SummaryTab({ data }: { data: ReportData }) {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <MetricCard label="CEO" value={es.ceo} delay={0} />
         <MetricCard label="Founded" value={es.founded} delay={80} />
-        <MetricCard label="Employees" value={es.employees ? (() => { const n = parseInt(String(es.employees).replace(/[^0-9]/g, ""), 10); return isNaN(n) ? es.employees : n.toLocaleString("en-GB"); })() : es.employees} delay={160} />
+        <MetricCard label="Employees" value={formatHeadcount(es.employees)} delay={160} />
         <MetricCard label="HQ" value={es.headquarters} delay={240} />
       </div>
 
@@ -295,7 +295,7 @@ function PrivateCompanyBanner({ companyName }: { companyName: string }) {
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-amber-800">
-          Private Company — Limited Public Financial Data
+          Private Company - Limited Public Financial Data
         </p>
         <p className="mt-0.5 text-xs leading-relaxed text-amber-700">
           {companyName} is privately held and not listed on a public exchange. Real-time market data
@@ -340,7 +340,7 @@ function FinancialsTab({ data, finMeta }: { data: ReportData; finMeta: FinMetaTy
   return (
     <div className="space-y-6">
 
-      {/* Private company notice — shown above all content */}
+      {/* Private company notice - shown above all content */}
       {isPrivate && <PrivateCompanyBanner companyName={data.companyName} />}
 
       {/* Financial data source badge */}
@@ -348,17 +348,17 @@ function FinancialsTab({ data, finMeta }: { data: ReportData; finMeta: FinMetaTy
         <SourceBadge />
         {finMeta?.confidence === "estimated" && (
           <span className="text-xs text-amber-400/80">
-            ⚠ Financial figures are AI estimates from training data — verify against published accounts before use
+            ⚠ Financial figures are AI estimates from training data - verify against published accounts before use
           </span>
         )}
         {finMeta?.confidence === "unavailable" && (
           <span className="text-xs text-slate-400">
-            Financial data unavailable — check FMP API key or retry generation
+            Financial data unavailable - check FMP API key or retry generation
           </span>
         )}
       </div>
 
-      {/* Top metric cards — for private companies, market-cap card is replaced with a locked placeholder */}
+      {/* Top metric cards - for private companies, market-cap card is replaced with a locked placeholder */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <MetricCard label="Revenue" value={fin.revenue} sub={fin.revenueGrowth} trend="up" delay={0} />
         <MetricCard label="Net Income" value={fin.netIncome} delay={80} />

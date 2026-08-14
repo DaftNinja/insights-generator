@@ -189,7 +189,7 @@ def search_rss(
 
     Args:
         query: Search query string
-        depth: 'quick', 'default', or 'deep' — controls result limit and feeds
+        depth: 'quick', 'default', or 'deep' - controls result limit and feeds
         subreddits: Optional pre-resolved subreddit names (without r/) to target
 
     Returns:

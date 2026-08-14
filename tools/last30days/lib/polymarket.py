@@ -117,7 +117,7 @@ _NOISE_WORDS = frozenset({
     "software", "plugin", "skill", "agent", "bot", "search", "research",
     # Generic prediction market terms
     "market", "odds", "prediction", "forecast", "chance", "probability",
-    # Comparison-query conjunctions — should not count as informative filter tokens
+    # Comparison-query conjunctions - should not count as informative filter tokens
     # when the topic is "X vs Y vs Z"
     "vs", "versus",
 })
@@ -141,7 +141,7 @@ def _passes_topic_filter(topic: str, event_title: str) -> bool:
     # Split into informative vs generic
     informative = [w for w in core_words if w not in _NOISE_WORDS]
 
-    # If ALL words are generic, we can't meaningfully filter — keep everything
+    # If ALL words are generic, we can't meaningfully filter - keep everything
     if not informative:
         return True
 

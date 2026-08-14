@@ -216,7 +216,7 @@ export type DigitalTransformation = z.infer<typeof DigitalTransformationSchema>;
 // ─── Auth Zod Schemas ─────────────────────────────────────────────────────────
 
 // Single magic-link request form. First-time users supply name/company;
-// returning users can leave them blank — we ignore them.
+// returning users can leave them blank - we ignore them.
 export const RequestLinkSchema = z.object({
   email: z.string().email(),
   firstName: z.string().trim().min(1).max(80).optional(),

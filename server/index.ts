@@ -15,7 +15,7 @@ const app = express();
 const PORT = parseInt(process.env.PORT ?? "3000");
 const IS_PROD = process.env.NODE_ENV === "production";
 
-// Behind Railway's proxy — needed for secure cookies.
+// Behind Railway's proxy - needed for secure cookies.
 app.set("trust proxy", 1);
 
 // ─── Core middleware ──────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ app.use(cors({ origin: process.env.CLIENT_URL ?? true, credentials: true }));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// ─── Health check — no DB dependency ─────────────────────────────────────────
+// ─── Health check - no DB dependency ─────────────────────────────────────────
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -87,7 +87,7 @@ async function init() {
     }
   }
   try {
-    // Users table — passwordless auth, so no password_hash / is_verified.
+    // Users table - passwordless auth, so no password_hash / is_verified.
     await db.execute(sql`CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
@@ -100,7 +100,7 @@ async function init() {
       last_login_at TIMESTAMP
     )`);
 
-    // Migrate legacy schema — drop password-era columns if present.
+    // Migrate legacy schema - drop password-era columns if present.
     await db.execute(sql`ALTER TABLE users DROP COLUMN IF EXISTS password_hash`);
     await db.execute(sql`ALTER TABLE users DROP COLUMN IF EXISTS is_verified`);
 
@@ -114,7 +114,7 @@ async function init() {
       created_at TIMESTAMP DEFAULT NOW()
     )`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_signin_tokens_token ON signin_tokens(token)`);
-    // Legacy email_tokens table — leave in place if present; not used anymore.
+    // Legacy email_tokens table - leave in place if present; not used anymore.
 
     await db.execute(sql`CREATE TABLE IF NOT EXISTS audit_logs (
       id SERIAL PRIMARY KEY, user_id INTEGER, email TEXT, action TEXT NOT NULL,

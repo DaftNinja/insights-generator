@@ -51,10 +51,10 @@ export const api = {
   reports: {
     list: () => request<any[]>("/reports"),
     get: (slug: string) => request<any>(`/reports/${slug}`),
-    generate: (companyName: string, forceRefresh = false) =>
+    generate: (companyName: string, forceRefresh = false, country?: string, city?: string, knownRevenue?: string) =>
       request<any>("/reports/generate", {
         method: "POST",
-        body: JSON.stringify({ companyName, forceRefresh }),
+        body: JSON.stringify({ companyName, forceRefresh, country, city, knownRevenue }),
       }),
     delete: (id: number) =>
       request<any>(`/reports/${id}`, { method: "DELETE" }),
@@ -71,4 +71,9 @@ export const api = {
         body: JSON.stringify({ companies }),
       }),
   },
+  citySearch: (country: string, city: string, context?: string, excludeNames?: string[], limit?: number) =>
+    request<any>("/city-search", {
+      method: "POST",
+      body: JSON.stringify({ country, city, context, excludeNames, limit }),
+    }),
 };

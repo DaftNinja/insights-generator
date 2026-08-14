@@ -4,7 +4,7 @@ import {
   getAllReports, getReportBySlug, createOrUpdateReport,
   updateSalesEnablement, deleteReport, isCacheValid, slugify,
 } from "./storage.js";
-import { generateReport, generateSalesEnablement, generateInvestorPresentation } from "./claude.js";
+import { generateReport, generateSalesEnablement, generateInvestorPresentation, generateCitySearch } from "./claude.js";
 import { writeAuditLog } from "./auth.js";
 
 export const router = Router();
@@ -12,8 +12,10 @@ export const router = Router();
 // ─── Request helpers ──────────────────────────────────────────────────────────
 
 function getSessionUser(req: any): { id?: number; email?: string } {
-  const user = req.session?.user;
-  return { id: user?.id ?? undefined, email: user?.email ?? undefined };
+  return {
+    id: req.session?.userId ?? undefined,
+    email: req.session?.email ?? undefined,
+  };
 }
 
 function getClientIp(req: any): string | undefined {
@@ -48,12 +50,15 @@ router.post("/reports/generate", async (req: any, res) => {
   const schema = z.object({
     companyName: z.string().min(1).max(200),
     forceRefresh: z.boolean().optional().default(false),
+    country: z.string().max(100).optional(),
+    city: z.string().max(100).optional(),
+    knownRevenue: z.string().max(50).optional(),
   });
 
   const parse = schema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: parse.error.message });
 
-  const { companyName, forceRefresh } = parse.data;
+  const { companyName, forceRefresh, country, city, knownRevenue } = parse.data;
   const slug = slugify(companyName);
 
   try {
@@ -61,23 +66,27 @@ router.post("/reports/generate", async (req: any, res) => {
     if (!forceRefresh) {
       const existing = await getReportBySlug(slug);
       if (existing && (await isCacheValid(existing))) {
+        // Backfill country/city if the cached report doesn't have them yet
+        if ((country || city) && (!existing.country || !existing.city)) {
+          await createOrUpdateReport({ companyName, country, city });
+        }
         const { id: cacheUserId, email: cacheEmail } = getSessionUser(req);
         await writeAuditLog("REPORT_CACHE_HIT", companyName, cacheUserId, cacheEmail, getClientIp(req));
         return res.json({ report: existing, cached: true });
       }
     }
 
-    // Generate — retry up to 2 times, with backoff for rate limits
+    // Generate - retry up to 2 times, with backoff for rate limits
     let reportData: unknown;
     let lastError: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        reportData = await generateReport(companyName);
+        reportData = await generateReport(companyName, knownRevenue);
         break;
       } catch (err: any) {
         lastError = err;
         const status = err?.status ?? 0;
-        // 429 = rate limited — wait and retry
+        // 429 = rate limited - wait and retry
         if (status === 429) {
           const retryAfter = parseInt(err?.headers?.['retry-after'] ?? '10', 10);
           const waitMs = Math.min((retryAfter + 2) * 1000, 30000);
@@ -85,7 +94,7 @@ router.post("/reports/generate", async (req: any, res) => {
           await new Promise(r => setTimeout(r, waitMs));
           continue;
         }
-        // Other 4xx errors (except 429) — don't retry
+        // Other 4xx errors (except 429) - don't retry
         if (status >= 400 && status < 500) throw err;
         if (attempt === 0) {
           console.warn(`Report generation attempt 1 failed (${status}), retrying…`);
@@ -96,7 +105,7 @@ router.post("/reports/generate", async (req: any, res) => {
     if (!reportData) throw lastError;
 
     const industry = (reportData as { industry?: string }).industry ?? "Unknown";
-    const saved = await createOrUpdateReport({ companyName, industry, reportData, isGenerating: false });
+    const saved = await createOrUpdateReport({ companyName, industry, reportData, isGenerating: false, country, city });
 
     const { id: genUserId, email: genEmail } = getSessionUser(req);
     await writeAuditLog("REPORT_GENERATED", companyName, genUserId, genEmail, getClientIp(req));
@@ -106,7 +115,7 @@ router.post("/reports/generate", async (req: any, res) => {
     console.error("POST /reports/generate error:", err);
     const status = err?.status ?? 0;
     const message = status === 429
-      ? "Service is temporarily busy — please wait a moment and try again."
+      ? "Service is temporarily busy - please wait a moment and try again."
       : "Report generation failed. Please try again.";
     res.status(500).json({ error: message });
   }
@@ -198,4 +207,31 @@ router.post("/reports/batch", async (req, res) => {
   }
 
   res.json({ results });
+});
+
+// ─── City Company Search ──────────────────────────────────────────────────────
+
+router.post("/city-search", async (req, res) => {
+  const schema = z.object({
+    country: z.string().min(1).max(100),
+    city: z.string().min(1).max(100),
+    context: z.string().max(500).optional(),
+    excludeNames: z.array(z.string()).max(100).optional().default([]),
+    limit: z.number().int().min(1).max(20).optional().default(20),
+  });
+
+  const parse = schema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: parse.error.message });
+
+  const { country, city, context, excludeNames, limit } = parse.data;
+
+  try {
+    const result = await generateCitySearch(country, city, context, excludeNames, limit);
+    const { id: userId, email } = getSessionUser(req);
+    await writeAuditLog("CITY_SEARCH", `${city}, ${country}`, userId, email, getClientIp(req));
+    res.json(result);
+  } catch (err) {
+    console.error("POST /city-search error:", err);
+    res.status(500).json({ error: "City search failed. Please try again." });
+  }
 });
