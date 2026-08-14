@@ -810,9 +810,10 @@ Only apply this if you are highly confident ${companyName} is a well-known major
     : (wikiData
       ? `\nSUPPLEMENTAL CONTEXT (Wikipedia):
 - Founded: ${wikiData.founded ?? "N/A"}
-- Headquarters: ${wikiData.headquarters ?? "N/A"}
-- Employees: ${wikiData.employees ?? "N/A"}
-- Website: ${wikiData.website ?? "N/A"}`
+- Headquarters: ${wikiData.headquarters ?? "N/A"}${fin?.employees ? "" : `
+- Employees: ${wikiData.employees ?? "N/A"}`}
+- Website: ${wikiData.website ?? "N/A"}
+Note: employees is stated once above - return a SINGLE headcount number, never a range, a second figure, or a parenthetical.`
       : "");
 
   const socialBlock = socialContext
@@ -1190,17 +1191,39 @@ export async function generateReport(companyName: string): Promise<unknown> {
       console.warn(`⚠️  Revenue range detected ("${f.revenue}") - using first value: "${first}"`);
       f.revenue = first;
     }
-    if (typeof f.employees === 'string' && (f.employees.includes('–') || f.employees.includes('-') || f.employees.includes('+'))) {
-      const first = f.employees.split(/[–\-+]/)[0].replace(/[^0-9,]/g, '').trim();
-      if (first) {
-        console.warn(`⚠️  Employees range detected ("${f.employees}") - using first value: "${first}"`);
-        f.employees = first;
-      }
-    }
     // Warn if revenue history is too short
     const histLen = Array.isArray(f.revenueHistory) ? f.revenueHistory.length : 0;
     if (histLen < 2) {
       console.warn(`⚠️  Revenue history only ${histLen} entr${histLen === 1 ? 'y' : 'ies'} for ${companyName} - chart will be sparse`);
+    }
+  }
+
+  // Normalise headcount. The model returns shapes like "330,000", "c. 330,000",
+  // "330,000–342,423" or "330,000 (342,423 incl. franchises)". Keep the first
+  // numeric group only - anything else gets mangled downstream.
+  if (partATyped?.executiveSummary) {
+    const es = partATyped.executiveSummary;
+    if (financials?.employees) {
+      // FMP is authoritative - don't let the model pick between conflicting sources
+      const fmpCount = String(financials.employees).replace(/[^0-9]/g, '');
+      if (fmpCount && String(es.employees ?? '').replace(/[^0-9]/g, '') !== fmpCount) {
+        console.warn(`⚠️  Employees "${es.employees}" replaced with FMP figure ${financials.employees}`);
+      }
+      es.employees = Number(fmpCount).toLocaleString('en-GB');
+    } else if (es.employees != null && es.employees !== '') {
+      const raw = String(es.employees).trim();
+      const match = raw.match(/\d[\d,]*/);
+      const n = match ? parseInt(match[0].replace(/,/g, ''), 10) : NaN;
+      if (Number.isFinite(n) && n > 0 && n <= 50_000_000) {
+        const normalised = n.toLocaleString('en-GB');
+        if (normalised !== raw) {
+          console.warn(`⚠️  Employees normalised: "${raw}" - using ${normalised}`);
+        }
+        es.employees = normalised;
+      } else {
+        console.warn(`⚠️  Employees value not a usable count ("${raw}") - setting null`);
+        es.employees = null;
+      }
     }
   }
 

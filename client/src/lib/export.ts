@@ -1,5 +1,5 @@
 import type { ReportData } from "@shared/schema";
-import { formatDate } from "./utils";
+import { formatDate, formatHeadcount } from "./utils";
 
 export async function exportToPDF(companyName: string, report?: ReportData): Promise<void> {
   const { default: jsPDF } = await import("jspdf");
@@ -81,7 +81,7 @@ function buildFullReportHTML(report: ReportData): string {
   <p style="color:#94a3b8;line-height:1.6">${esc(es.companyOverview)}</p>
   <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:1rem 0">
     <div style="background:#111827;border:1px solid #1e2d3d;border-radius:8px;padding:16px"><div style="font-size:0.75rem;text-transform:uppercase;color:#475569;margin-bottom:4px">CEO</div><div style="font-weight:bold">${val(es.ceo)}</div></div>
-    <div style="background:#111827;border:1px solid #1e2d3d;border-radius:8px;padding:16px"><div style="font-size:0.75rem;text-transform:uppercase;color:#475569;margin-bottom:4px">Employees</div><div style="font-weight:bold">${val(es.employees)}</div></div>
+    <div style="background:#111827;border:1px solid #1e2d3d;border-radius:8px;padding:16px"><div style="font-size:0.75rem;text-transform:uppercase;color:#475569;margin-bottom:4px">Employees</div><div style="font-weight:bold">${val(formatHeadcount(es.employees))}</div></div>
     <div style="background:#111827;border:1px solid #1e2d3d;border-radius:8px;padding:16px"><div style="font-size:0.75rem;text-transform:uppercase;color:#475569;margin-bottom:4px">Founded</div><div style="font-weight:bold">${val(es.founded)}</div></div>
     <div style="background:#111827;border:1px solid #1e2d3d;border-radius:8px;padding:16px"><div style="font-size:0.75rem;text-transform:uppercase;color:#475569;margin-bottom:4px">Headquarters</div><div style="font-weight:bold">${val(es.headquarters)}</div></div>
   </div>
@@ -214,7 +214,7 @@ export async function exportToPPTX(report: ReportData): Promise<void> {
     const fields = [
       ["CEO", es.ceo],
       ["Founded", es.founded],
-      ["Employees", es.employees],
+      ["Employees", formatHeadcount(es.employees)],
       ["HQ", es.headquarters],
       ["Exchange", es.stockExchange ?? "Private"],
     ];
@@ -513,7 +513,7 @@ export function exportToHTML(report: ReportData): void {
   <p>${esc(es.companyOverview)}</p>
   <div class="grid" style="margin-top:1rem">
     <div class="card"><div class="label">CEO</div><div class="value-sm">${val(es.ceo)}</div></div>
-    <div class="card"><div class="label">Employees</div><div class="value-sm">${val(es.employees)}</div></div>
+    <div class="card"><div class="label">Employees</div><div class="value-sm">${val(formatHeadcount(es.employees))}</div></div>
     <div class="card"><div class="label">Founded</div><div class="value-sm">${val(es.founded)}</div></div>
     <div class="card"><div class="label">Headquarters</div><div class="value-sm">${val(es.headquarters)}</div></div>
   </div>
