@@ -1,5 +1,5 @@
 import type { ReportData } from "@shared/schema";
-import { formatDate } from "./utils";
+import { formatDate, formatHeadcount } from "./utils";
 
 export async function exportToPDF(companyName: string): Promise<void> {
   const { default: jsPDF } = await import("jspdf");
@@ -91,7 +91,7 @@ export async function exportToPPTX(report: ReportData): Promise<void> {
     const fields = [
       ["CEO", es.ceo],
       ["Founded", es.founded],
-      ["Employees", es.employees],
+      ["Employees", formatHeadcount(es.employees)],
       ["HQ", es.headquarters],
       ["Exchange", es.stockExchange ?? "Private"],
     ];
@@ -205,7 +205,7 @@ export function exportToHTML(report: ReportData): void {
   <p>${report.executiveSummary.companyOverview}</p>
   <div class="grid" style="margin-top:1rem">
     <div class="card"><div class="label">CEO</div><div style="color:#f1f5f9;font-weight:bold">${report.executiveSummary.ceo}</div></div>
-    <div class="card"><div class="label">Employees</div><div style="color:#f1f5f9;font-weight:bold">${report.executiveSummary.employees}</div></div>
+    <div class="card"><div class="label">Employees</div><div style="color:#f1f5f9;font-weight:bold">${formatHeadcount(report.executiveSummary.employees)}</div></div>
     <div class="card"><div class="label">Founded</div><div style="color:#f1f5f9;font-weight:bold">${report.executiveSummary.founded}</div></div>
     <div class="card"><div class="label">Headquarters</div><div style="color:#f1f5f9;font-weight:bold">${report.executiveSummary.headquarters}</div></div>
   </div>
