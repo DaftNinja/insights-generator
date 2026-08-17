@@ -3,6 +3,8 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import * as path from "path";
 import { existsSync as fsExistsSync } from "fs";
+import { sanitiseNumericFields } from "../shared/reportFieldRules.js";
+import { normaliseHeadcount, parseMoney } from "../shared/numeric.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -355,7 +357,7 @@ async function lookupPrivateCompanyIntel(companyName: string): Promise<PrivateCo
   "debtFacilities": "Debt raised, lender, and purpose, e.g. £206M Deutsche Bank for European expansion or null",
   "keyDeals": ["Key contract or partnership, e.g. 22MW AI infrastructure deal with Nebius"],
   "revenueEstimate": "Revenue estimate from any source, e.g. $4.6M-$8.6M (estimated) or null",
-  "employees": "Headcount estimate, e.g. 40-50 or null",
+  "employees": "Headcount as a single number if reported, e.g. 450. If only a range is available, write it as 'low to high' e.g. '400 to 500', never as a hyphenated range like '400-500'. Null if unknown.",
   "rawContext": "2-3 sentence summary of the most important business intelligence you found"
 }`
       }],
@@ -1082,6 +1084,7 @@ function computeConfidence(
   fmpESG: import("./claude.js").FMPESGData | null,
   ceo: string,
   wikiData?: WikipediaData | null,
+  numericIssues: { label: string; severity: "warn" | "error" }[] = [],
 ): { rating: "green" | "amber" | "red"; score: number; signals: { label: string; status: "pass" | "warn" | "fail" }[]; summary: string } {
 
   const signals: { label: string; status: "pass" | "warn" | "fail" }[] = [];
@@ -1120,6 +1123,15 @@ function computeConfidence(
 
   const risksOk = (partB?.riskAssessment?.risks?.length ?? 0) >= 2;
   signals.push({ label: "Risk assessment", status: risksOk ? "pass" : "warn" });
+
+  // Numeric plausibility. A report rendering a figure the validator could not
+  // verify should not be able to score green.
+  const numericErrors = numericIssues.filter(i => i.severity === "error");
+  const numericWarns  = numericIssues.filter(i => i.severity === "warn");
+  signals.push({
+    label:  "Numeric fields plausible",
+    status: numericErrors.length > 0 ? "fail" : numericWarns.length > 0 ? "warn" : "pass",
+  });
 
   const maxScore = signals.length * 10;
   const score    = Math.round(
@@ -1198,36 +1210,55 @@ export async function generateReport(companyName: string): Promise<unknown> {
     }
   }
 
-  // Normalise headcount. The model returns shapes like "330,000", "c. 330,000",
-  // "330,000–342,423" or "330,000 (342,423 incl. franchises)". Keep the first
-  // numeric group only - anything else gets mangled downstream.
+  // Normalise headcount.
+  //
+  // FMP precedence is from c16ef26 and is kept: a verified integer beats
+  // anything the model produced. Everything else goes through the shared
+  // normaliser, which preserves a range as "422 to 458" rather than collapsing
+  // it to its lower bound. Collapsing removed the visible bug but invented
+  // precision the source never had - a web-search estimate of 422-458 people
+  // is not a report that the company employs exactly 422.
   if (partATyped?.executiveSummary) {
     const es = partATyped.executiveSummary;
     if (financials?.employees) {
       // FMP is authoritative - don't let the model pick between conflicting sources
-      const fmpCount = String(financials.employees).replace(/[^0-9]/g, '');
-      if (fmpCount && String(es.employees ?? '').replace(/[^0-9]/g, '') !== fmpCount) {
-        console.warn(`⚠️  Employees "${es.employees}" replaced with FMP figure ${financials.employees}`);
+      const fmp = normaliseHeadcount(financials.employees);
+      if (fmp && fmp.display !== String(es.employees ?? '')) {
+        console.warn(`⚠️  Employees "${es.employees}" replaced with FMP figure ${fmp.display}`);
       }
-      es.employees = Number(fmpCount).toLocaleString('en-GB');
+      if (fmp) es.employees = fmp.display;
     } else if (es.employees != null && es.employees !== '') {
-      const raw = String(es.employees).trim();
-      const match = raw.match(/\d[\d,]*/);
-      const n = match ? parseInt(match[0].replace(/,/g, ''), 10) : NaN;
-      if (Number.isFinite(n) && n > 0 && n <= 50_000_000) {
-        const normalised = n.toLocaleString('en-GB');
-        if (normalised !== raw) {
-          console.warn(`⚠️  Employees normalised: "${raw}" - using ${normalised}`);
-        }
-        es.employees = normalised;
-      } else {
-        console.warn(`⚠️  Employees value not a usable count ("${raw}") - setting null`);
+      const hc = normaliseHeadcount(es.employees);
+      if (!hc) {
         es.employees = null;
+      } else {
+        if (hc.warning) {
+          console.warn(`⚠️  Employees value not usable ("${es.employees}"): ${hc.warning}`);
+        } else if (hc.display !== String(es.employees)) {
+          console.warn(`⚠️  Employees normalised: "${es.employees}" - using ${hc.display}`);
+        }
+        es.employees = hc.display;
       }
     }
   }
 
-  const confidence = computeConfidence(partA, partB, financials, fmpData.esg, currentCEO, wikiData);
+
+  // Sanitise every numeric display field through one registry.
+  //
+  // c16ef26 fixed the headcount renderer. This catches the same class of error
+  // in the other 13 numeric fields, and - via assertRulePathsExist() in the
+  // tests - makes a guard that points at a non-existent schema path a test
+  // failure rather than silent dead code, which is how the original bug lived
+  // for as long as it did.
+  const numericIssues = sanitiseNumericFields(partATyped);
+  for (const issue of numericIssues) {
+    const changed = issue.before !== issue.after ? ` (normalised "${issue.before}" -> "${issue.after}")` : "";
+    const line = `[${issue.label}] ${issue.path}: ${issue.message}${changed}`;
+    if (issue.severity === "error") console.error(`❌ ${companyName} ${line}`);
+    else console.warn(`⚠️  ${companyName} ${line}`);
+  }
+
+  const confidence = computeConfidence(partA, partB, financials, fmpData.esg, currentCEO, wikiData, numericIssues);
 
   const financialsMeta: FinancialsMetadata = (() => {
     const now = new Date().toISOString().slice(0, 10);
@@ -1271,9 +1302,11 @@ export async function generateReport(companyName: string): Promise<unknown> {
     const revHistory = financials.revenueHistory;
     if (revHistory.length >= 2) {
       for (let i = 0; i < revHistory.length - 1; i++) {
-        const curr = parseFloat(revHistory[i].revenue.replace(/[^0-9.]/g, ""));
-        const prev = parseFloat(revHistory[i + 1].revenue.replace(/[^0-9.]/g, ""));
-        if (prev > 0 && curr > 0) {
+        // parseMoney is unit-aware. The digit-strip compared 1.2 against 950
+        // when revenue moved from $950M to $1.2B, reporting a 99.9% collapse.
+        const curr = parseMoney(revHistory[i].revenue);
+        const prev = parseMoney(revHistory[i + 1].revenue);
+        if (prev != null && curr != null && prev > 0 && curr > 0) {
           const change = Math.abs((curr - prev) / prev);
           if (change > 3) {
             console.warn(`⚠️  Sanity: implausible revenue swing for ${companyName} (${revHistory[i+1].year}→${revHistory[i].year}: ${(change*100).toFixed(0)}%)`);
