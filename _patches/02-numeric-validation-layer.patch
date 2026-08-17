@@ -1,0 +1,935 @@
+From 7191d2ad11ef14b6e7c62b1314e0801bfe6324f3 Mon Sep 17 00:00:00 2001
+From: Andrew McCreath <andrew.mccreath@gmail.com>
+Date: Mon, 17 Aug 2026 10:07:50 +0000
+Subject: [PATCH] feat: numeric field validation layer over the headcount fix
+
+c16ef26 fixed the headcount renderer by taking the first numeric group.
+That removed the visible bug but collapsed "422-458" to "422", inventing
+precision the source never had, and left the same class of error live in
+the other numeric fields.
+
+- shared/numeric.ts: one rule, never strip non-digits and re-parse. Tokenises
+  each number separately so a range can never be concatenated. Preserves
+  ranges as "422 to 458" and flags them as estimates. Unit-aware parseMoney.
+- shared/numeric.ts: crossCheckHeadcountAgainstRevenue. Absolute bounds cannot
+  catch 422,458 because it is plausible in isolation; against $109M of revenue
+  it is $258 per employee, which is not.
+- shared/reportFieldRules.ts: registry of all 14 numeric fields reaching the
+  UI, plus assertRulePathsExist, which fails a test when a rule targets a path
+  the Zod schema does not define. That is how the original dead guard on
+  financials.employees survived unnoticed.
+- claude.ts: keeps FMP precedence from c16ef26, routes the rest through the
+  shared normaliser, runs the registry, feeds a new confidence signal.
+- claude.ts: unit-aware revenue growth; private-intel prompt no longer asks
+  for a hyphenated range.
+- utils.ts: formatHeadcount delegates to the shared parser so client and
+  server cannot disagree about the same value.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01MahHSNvG8z3VQ8gGE19HJg
+---
+ client/src/lib/utils.ts       |  14 +-
+ server/claude.ts              |  79 +++++++----
+ shared/coltRegression.test.ts |  76 +++++++++++
+ shared/numeric.test.ts        | 130 ++++++++++++++++++
+ shared/numeric.ts             | 244 +++++++++++++++++++++++++++++++++
+ shared/reportFieldRules.ts    | 247 ++++++++++++++++++++++++++++++++++
+ 6 files changed, 760 insertions(+), 30 deletions(-)
+ create mode 100644 shared/coltRegression.test.ts
+ create mode 100644 shared/numeric.test.ts
+ create mode 100644 shared/numeric.ts
+ create mode 100644 shared/reportFieldRules.ts
+
+diff --git a/client/src/lib/utils.ts b/client/src/lib/utils.ts
+index 82a8d60..c04e8f0 100644
+--- a/client/src/lib/utils.ts
++++ b/client/src/lib/utils.ts
+@@ -1,3 +1,4 @@
++import { normaliseHeadcount } from "@shared/numeric";
+ export function formatDate(date: string | Date | null | undefined): string {
+   if (!date) return "-";
+   const d = new Date(date);
+@@ -56,17 +57,16 @@ export function cn(...classes: (string | undefined | false | null)[]): string {
+   return classes.filter(Boolean).join(" ");
+ }
+ 
++// Headcount is normalised server-side; this is belt-and-braces for cached
++// reports generated before that landed. Delegates to the shared parser so
++// client and server can never disagree about the same value.
+ // Headcount strings arrive from the model in many shapes: "330,000",
+ // "c. 330,000 employees", "330,000–342,423", "330,000 (FY2024)".
+ // Take the FIRST numeric group only - never strip all non-digits from the whole
+ // string, which silently concatenates two figures into one absurd number
+ // (e.g. "330,000 342,423" -> 330,000,342,423).
+ export function formatHeadcount(value: string | number | null | undefined): string {
+-  if (value === null || value === undefined || value === "") return "-";
+-  const raw = String(value).trim();
+-  const match = raw.match(/\d[\d,]*/);
+-  if (!match) return raw;
+-  const n = parseInt(match[0].replace(/,/g, ""), 10);
+-  if (!Number.isFinite(n) || n <= 0 || n > 50_000_000) return raw;
+-  return n.toLocaleString("en-GB");
++  const hc = normaliseHeadcount(value);
++  return hc ? hc.display : "-";
+ }
++
+diff --git a/server/claude.ts b/server/claude.ts
+index 788e7ea..b1039ad 100644
+--- a/server/claude.ts
++++ b/server/claude.ts
+@@ -3,6 +3,8 @@ import { execFile } from "child_process";
+ import { promisify } from "util";
+ import * as path from "path";
+ import { existsSync as fsExistsSync } from "fs";
++import { sanitiseNumericFields } from "../shared/reportFieldRules.js";
++import { normaliseHeadcount, parseMoney } from "../shared/numeric.js";
+ 
+ const execFileAsync = promisify(execFile);
+ 
+@@ -355,7 +357,7 @@ async function lookupPrivateCompanyIntel(companyName: string): Promise<PrivateCo
+   "debtFacilities": "Debt raised, lender, and purpose, e.g. £206M Deutsche Bank for European expansion or null",
+   "keyDeals": ["Key contract or partnership, e.g. 22MW AI infrastructure deal with Nebius"],
+   "revenueEstimate": "Revenue estimate from any source, e.g. $4.6M-$8.6M (estimated) or null",
+-  "employees": "Headcount estimate, e.g. 40-50 or null",
++  "employees": "Headcount as a single number if reported, e.g. 450. If only a range is available, write it as 'low to high' e.g. '400 to 500', never as a hyphenated range like '400-500'. Null if unknown.",
+   "rawContext": "2-3 sentence summary of the most important business intelligence you found"
+ }`
+       }],
+@@ -1088,6 +1090,7 @@ function computeConfidence(
+   fmpESG: import("./claude.js").FMPESGData | null,
+   ceo: string,
+   wikiData?: WikipediaData | null,
++  numericIssues: { label: string; severity: "warn" | "error" }[] = [],
+ ): { rating: "green" | "amber" | "red"; score: number; signals: { label: string; status: "pass" | "warn" | "fail" }[]; summary: string } {
+ 
+   const signals: { label: string; status: "pass" | "warn" | "fail" }[] = [];
+@@ -1127,6 +1130,15 @@ function computeConfidence(
+   const risksOk = (partB?.riskAssessment?.risks?.length ?? 0) >= 2;
+   signals.push({ label: "Risk assessment", status: risksOk ? "pass" : "warn" });
+ 
++  // Numeric plausibility. A report rendering a figure the validator could not
++  // verify should not be able to score green.
++  const numericErrors = numericIssues.filter(i => i.severity === "error");
++  const numericWarns  = numericIssues.filter(i => i.severity === "warn");
++  signals.push({
++    label:  "Numeric fields plausible",
++    status: numericErrors.length > 0 ? "fail" : numericWarns.length > 0 ? "warn" : "pass",
++  });
++
+   const maxScore = signals.length * 10;
+   const score    = Math.round(
+     (signals.reduce((acc, s) => acc + (s.status === "pass" ? 10 : s.status === "warn" ? 5 : 0), 0) / maxScore) * 100
+@@ -1204,36 +1216,55 @@ export async function generateReport(companyName: string, knownRevenue?: string)
+     }
+   }
+ 
+-  // Normalise headcount. The model returns shapes like "330,000", "c. 330,000",
+-  // "330,000–342,423" or "330,000 (342,423 incl. franchises)". Keep the first
+-  // numeric group only - anything else gets mangled downstream.
++  // Normalise headcount.
++  //
++  // FMP precedence is from c16ef26 and is kept: a verified integer beats
++  // anything the model produced. Everything else goes through the shared
++  // normaliser, which preserves a range as "422 to 458" rather than collapsing
++  // it to its lower bound. Collapsing removed the visible bug but invented
++  // precision the source never had - a web-search estimate of 422-458 people
++  // is not a report that the company employs exactly 422.
+   if (partATyped?.executiveSummary) {
+     const es = partATyped.executiveSummary;
+     if (financials?.employees) {
+       // FMP is authoritative - don't let the model pick between conflicting sources
+-      const fmpCount = String(financials.employees).replace(/[^0-9]/g, '');
+-      if (fmpCount && String(es.employees ?? '').replace(/[^0-9]/g, '') !== fmpCount) {
+-        console.warn(`⚠️  Employees "${es.employees}" replaced with FMP figure ${financials.employees}`);
++      const fmp = normaliseHeadcount(financials.employees);
++      if (fmp && fmp.display !== String(es.employees ?? '')) {
++        console.warn(`⚠️  Employees "${es.employees}" replaced with FMP figure ${fmp.display}`);
+       }
+-      es.employees = Number(fmpCount).toLocaleString('en-GB');
++      if (fmp) es.employees = fmp.display;
+     } else if (es.employees != null && es.employees !== '') {
+-      const raw = String(es.employees).trim();
+-      const match = raw.match(/\d[\d,]*/);
+-      const n = match ? parseInt(match[0].replace(/,/g, ''), 10) : NaN;
+-      if (Number.isFinite(n) && n > 0 && n <= 50_000_000) {
+-        const normalised = n.toLocaleString('en-GB');
+-        if (normalised !== raw) {
+-          console.warn(`⚠️  Employees normalised: "${raw}" - using ${normalised}`);
+-        }
+-        es.employees = normalised;
+-      } else {
+-        console.warn(`⚠️  Employees value not a usable count ("${raw}") - setting null`);
++      const hc = normaliseHeadcount(es.employees);
++      if (!hc) {
+         es.employees = null;
++      } else {
++        if (hc.warning) {
++          console.warn(`⚠️  Employees value not usable ("${es.employees}"): ${hc.warning}`);
++        } else if (hc.display !== String(es.employees)) {
++          console.warn(`⚠️  Employees normalised: "${es.employees}" - using ${hc.display}`);
++        }
++        es.employees = hc.display;
+       }
+     }
+   }
+ 
+-  const confidence = computeConfidence(partA, partB, financials, fmpData.esg, currentCEO, wikiData);
++
++  // Sanitise every numeric display field through one registry.
++  //
++  // c16ef26 fixed the headcount renderer. This catches the same class of error
++  // in the other 13 numeric fields, and - via assertRulePathsExist() in the
++  // tests - makes a guard that points at a non-existent schema path a test
++  // failure rather than silent dead code, which is how the original bug lived
++  // for as long as it did.
++  const numericIssues = sanitiseNumericFields(partATyped);
++  for (const issue of numericIssues) {
++    const changed = issue.before !== issue.after ? ` (normalised "${issue.before}" -> "${issue.after}")` : "";
++    const line = `[${issue.label}] ${issue.path}: ${issue.message}${changed}`;
++    if (issue.severity === "error") console.error(`❌ ${companyName} ${line}`);
++    else console.warn(`⚠️  ${companyName} ${line}`);
++  }
++
++  const confidence = computeConfidence(partA, partB, financials, fmpData.esg, currentCEO, wikiData, numericIssues);
+ 
+   const financialsMeta: FinancialsMetadata = (() => {
+     const now = new Date().toISOString().slice(0, 10);
+@@ -1277,9 +1308,11 @@ export async function generateReport(companyName: string, knownRevenue?: string)
+     const revHistory = financials.revenueHistory;
+     if (revHistory.length >= 2) {
+       for (let i = 0; i < revHistory.length - 1; i++) {
+-        const curr = parseFloat(revHistory[i].revenue.replace(/[^0-9.]/g, ""));
+-        const prev = parseFloat(revHistory[i + 1].revenue.replace(/[^0-9.]/g, ""));
+-        if (prev > 0 && curr > 0) {
++        // parseMoney is unit-aware. The digit-strip compared 1.2 against 950
++        // when revenue moved from $950M to $1.2B, reporting a 99.9% collapse.
++        const curr = parseMoney(revHistory[i].revenue);
++        const prev = parseMoney(revHistory[i + 1].revenue);
++        if (prev != null && curr != null && prev > 0 && curr > 0) {
+           const change = Math.abs((curr - prev) / prev);
+           if (change > 3) {
+             console.warn(`⚠️  Sanity: implausible revenue swing for ${companyName} (${revHistory[i+1].year}→${revHistory[i].year}: ${(change*100).toFixed(0)}%)`);
+diff --git a/shared/coltRegression.test.ts b/shared/coltRegression.test.ts
+new file mode 100644
+index 0000000..6658213
+--- /dev/null
++++ b/shared/coltRegression.test.ts
+@@ -0,0 +1,76 @@
++/**
++ * End-to-end reproduction of the Colt Data Centre Services report.
++ * Feeds the exact model output that produced the bad report through the old
++ * and new pipelines and compares what each renderer would print.
++ *
++ * Run: npx tsx shared/coltRegression.test.ts
++ */
++import assert from "node:assert/strict";
++import { sanitiseNumericFields } from "./reportFieldRules.js";
++
++/** Part A exactly as the model returned it for Colt, before any sanitisation. */
++const rawPartA = () => ({
++  companyName: "Colt Data Centre Services",
++  executiveSummary: { employees: "422-458", founded: "2010", ceo: "See company website for current CEO" },
++  financials: {
++    revenue: "$109M-$233.7M", netIncome: null, ebitda: null, marketCap: null,
++    stockPrice: null, revenueGrowth: null, revenueHistory: [],
++  },
++  marketAnalysis: { totalAddressableMarket: null, marketShare: null },
++  techSpend: { annualITBudget: null },
++  growthOpportunities: {
++    totalOpportunityValue: "$3.5-8.1B",
++    opportunities: [{ potentialValue: "$2-5B" }],
++  },
++});
++
++// The two renderers, as they were.
++const oldDashboardRender = (v: string) => {
++  const n = parseInt(String(v).replace(/[^0-9]/g, ""), 10);
++  return isNaN(n) ? v : n.toLocaleString("en-GB");
++};
++const exportRender = (v: string) => v; // export.ts printed the raw value
++
++console.log("\n─── Before the fix ───");
++const before = rawPartA();
++const beforeDash = oldDashboardRender(before.executiveSummary.employees);
++const beforeExport = exportRender(before.executiveSummary.employees);
++console.log(`  model returned : "${before.executiveSummary.employees}"`);
++console.log(`  dashboard card : "${beforeDash}"`);
++console.log(`  HTML export    : "${beforeExport}"`);
++console.log(`  agree?         : ${beforeDash === beforeExport ? "yes" : "NO - same report, two different numbers"}`);
++
++assert.equal(beforeDash, "422,458", "reproduces the reported bug");
++assert.notEqual(beforeDash, beforeExport, "reproduces the dashboard/export divergence");
++
++console.log("\n─── After the fix ───");
++const after = rawPartA();
++const issues = sanitiseNumericFields(after);
++const afterValue = after.executiveSummary.employees;
++console.log(`  model returned : "422-458"`);
++console.log(`  normalised to  : "${afterValue}"`);
++console.log(`  dashboard card : "${afterValue}"   (renders verbatim)`);
++console.log(`  HTML export    : "${exportRender(afterValue)}"   (renders verbatim)`);
++console.log(`  agree?         : yes`);
++
++assert.equal(afterValue, "422 to 458");
++assert.ok(!afterValue.includes("422,458"));
++
++console.log("\n─── Validator output that would now appear in Railway logs ───");
++for (const i of issues) {
++  console.log(`  ${i.severity === "error" ? "❌" : "⚠️ "} [${i.label}] ${i.path}: ${i.message}`);
++}
++assert.ok(issues.length > 0, "the bad report must not pass silently");
++assert.ok(issues.some(i => i.path === "executiveSummary.employees"), "headcount must be flagged");
++assert.ok(issues.some(i => i.path === "financials.revenue"), "the 2x revenue range must be flagged");
++
++console.log("\n─── Counterfactual: what if the model had returned 422458 as a plain number? ───");
++const plain: any = rawPartA();
++plain.executiveSummary.employees = "422458";
++plain.financials.revenue = "$109M";
++const plainIssues = sanitiseNumericFields(plain);
++const crossCheck = plainIssues.find(i => i.label === "Employees vs revenue");
++console.log(`  ${crossCheck ? "❌ " + crossCheck.message : "not caught"}`);
++assert.ok(crossCheck, "revenue-per-head cross-check must catch a plausible-looking but wrong headcount");
++
++console.log("\nAll Colt regression assertions passed\n");
+diff --git a/shared/numeric.test.ts b/shared/numeric.test.ts
+new file mode 100644
+index 0000000..7ea4004
+--- /dev/null
++++ b/shared/numeric.test.ts
+@@ -0,0 +1,130 @@
++/**
++ * Regression tests for the headcount inflation bug.
++ * Run: npx tsx shared/numeric.test.ts
++ */
++import assert from "node:assert/strict";
++import { numericTokens, parseNumericField, normaliseHeadcount, parseMoney, percentChange, crossCheckHeadcountAgainstRevenue } from "./numeric.js";
++import { sanitiseNumericFields, assertRulePathsExist } from "./reportFieldRules.js";
++import { ReportDataSchema } from "./schema.js";
++
++let pass = 0;
++const t = (name: string, fn: () => void) => {
++  try { fn(); pass++; console.log(`  ok  ${name}`); }
++  catch (e: any) { console.error(`  FAIL ${name}\n       ${e.message}`); process.exitCode = 1; }
++};
++
++console.log("\nnumericTokens - never welds numbers together");
++t("range stays two tokens", () => assert.deepEqual(numericTokens("422-458"), [422, 458]));
++t("thousands separators survive", () => assert.deepEqual(numericTokens("10,000-12,000"), [10000, 12000]));
++t("single value", () => assert.deepEqual(numericTokens("~1,200"), [1200]));
++t("no digits", () => assert.deepEqual(numericTokens("Unknown"), []));
++
++console.log("\nnormaliseHeadcount - the actual Colt regression");
++t("422-458 never becomes 422,458", () => {
++  const hc = normaliseHeadcount("422-458")!;
++  assert.equal(hc.display, "422 to 458");
++  assert.equal(hc.isEstimate, true);
++  assert.ok(!hc.display.includes("422,458"), "must not concatenate range bounds");
++});
++t("en dash range handled", () => assert.equal(normaliseHeadcount("40–50")!.display, "40 to 50"));
++t("10,000-12,000 does not become 1,000,012,000", () => {
++  assert.equal(normaliseHeadcount("10,000-12,000")!.display, "10,000 to 12,000");
++});
++t("plain number formats cleanly", () => {
++  const hc = normaliseHeadcount("330000")!;
++  assert.equal(hc.display, "330,000");
++  assert.equal(hc.isEstimate, false);
++});
++t("already-formatted number is stable", () => assert.equal(normaliseHeadcount("62,000")!.display, "62,000"));
++t("approx marker preserved", () => {
++  const hc = normaliseHeadcount("~500")!;
++  assert.equal(hc.display, "~500");
++  assert.equal(hc.isEstimate, true);
++});
++t("500+ treated as estimate", () => assert.equal(normaliseHeadcount("500+")!.isEstimate, true));
++t("null-ish returns null", () => {
++  for (const v of [null, "", "null", "N/A", "Unknown"]) assert.equal(normaliseHeadcount(v), null, String(v));
++});
++t("bounds alone cannot catch 422,458 - it is plausible in isolation", () => {
++  const hc = normaliseHeadcount("422458")!;
++  assert.equal(hc.warning, null, "422,458 is Amazon-scale but not out of bounds");
++  assert.equal(hc.display, "422,458");
++});
++t("absurd magnitudes are still bounded", () => {
++  assert.ok(normaliseHeadcount("9,000,000")!.warning, "9M employees must warn");
++});
++t("cross-check catches what bounds cannot", () => {
++  const xc = crossCheckHeadcountAgainstRevenue("422,458", "$109M");
++  assert.equal(xc.ok, false);
++  assert.match(xc.message!, /order of magnitude/);
++});
++t("the correct Colt figure passes the cross-check", () => {
++  assert.equal(crossCheckHeadcountAgainstRevenue("422 to 458", "$109M").ok, true);
++});
++t("cross-check stays quiet when either side is missing", () => {
++  assert.equal(crossCheckHeadcountAgainstRevenue("422-458", null).ok, true);
++  assert.equal(crossCheckHeadcountAgainstRevenue(null, "$109M").ok, true);
++});
++t("prose with two unrelated numbers is not silently merged", () => {
++  const p = parseNumericField("Q3 2024 headcount 500");
++  assert.equal(p.kind, "unparseable");
++});
++
++console.log("\nparseMoney - unit-aware comparison");
++t("$1.2B", () => assert.equal(parseMoney("$1.2B"), 1.2e9));
++t("£950M", () => assert.equal(parseMoney("£950M"), 950e6));
++t("€4.6bn", () => assert.equal(parseMoney("€4.6bn"), 4.6e9));
++t("range is not a scalar", () => assert.equal(parseMoney("$109M-$233.7M"), null));
++t("growth across a unit boundary is correct", () => {
++  const g = percentChange("$1.2B", "$950M")!;
++  assert.ok(Math.abs(g - 26.32) < 0.1, `expected ~26.3%, got ${g}`);
++});
++t("old digit-strip approach was wrong", () => {
++  const naive = parseFloat("$1.2B".replace(/[^0-9.]/g, "")) / parseFloat("$950M".replace(/[^0-9.]/g, ""));
++  assert.ok(naive < 0.01, "demonstrates the old bug: 1.2 vs 950");
++});
++
++console.log("\nsanitiseNumericFields - end to end on the Colt report shape");
++t("employees normalised and flagged", () => {
++  const report: any = {
++    executiveSummary: { employees: "422-458", founded: "2010" },
++    financials: { revenue: "$109M-$233.7M", netIncome: null, ebitda: null, marketCap: null, stockPrice: null, revenueGrowth: null, revenueHistory: [] },
++    marketAnalysis: { totalAddressableMarket: null, marketShare: null },
++    techSpend: { annualITBudget: null },
++    growthOpportunities: { totalOpportunityValue: "$3.5-8.1B", opportunities: [{ potentialValue: "$2-5B" }] },
++  };
++  const issues = sanitiseNumericFields(report);
++  assert.equal(report.executiveSummary.employees, "422 to 458");
++  assert.ok(issues.some(i => i.path === "executiveSummary.employees" && i.severity === "warn"));
++  assert.ok(issues.some(i => i.path === "financials.revenue" && /range returned/.test(i.message)),
++    "revenue range must be flagged");
++  assert.ok(!issues.some(i => i.label === "Total opportunity value"), "TAM-style ranges are legitimate");
++});
++t("a dropped section is an error, a missing optional leaf is only a warning", () => {
++  const dropped = sanitiseNumericFields({ executiveSummary: { employees: "500", founded: "2010" } });
++  assert.ok(dropped.some(i => i.path === "financials.revenue" && i.severity === "error" && /dead guard/.test(i.message)),
++    "an absent financials container must be an error");
++
++  const optional = sanitiseNumericFields({
++    executiveSummary: { employees: "500", founded: "2010" },
++    financials: { revenue: "$10M", netIncome: null, ebitda: null, marketCap: null, revenueGrowth: null, revenueHistory: [] },
++    marketAnalysis: { totalAddressableMarket: null, marketShare: null },
++    techSpend: { annualITBudget: null },
++    growthOpportunities: { totalOpportunityValue: null, opportunities: [] },
++  });
++  const stockPrice = optional.find(i => i.path === "financials.stockPrice");
++  assert.equal(stockPrice?.severity, "warn", "an omitted optional field must not be an error");
++  assert.equal(optional.filter(i => i.severity === "error").length, 0, "no spurious errors on a well-formed report");
++});
++
++console.log("\nassertRulePathsExist - the meta-fix");
++t("every field rule resolves against the Zod schema", () => {
++  const bad = assertRulePathsExist(ReportDataSchema);
++  assert.deepEqual(bad, [], `rules pointing at non-existent paths: ${bad.join(", ")}`);
++});
++t("the old dead guard path would have been caught", () => {
++  const shape = (ReportDataSchema as any).shape.financials.shape;
++  assert.ok(!("employees" in shape), "financials.employees must not exist - proving the old guard was dead code");
++});
++
++console.log(`\n${pass} assertions passed\n`);
+diff --git a/shared/numeric.ts b/shared/numeric.ts
+new file mode 100644
+index 0000000..ebc0a04
+--- /dev/null
++++ b/shared/numeric.ts
+@@ -0,0 +1,244 @@
++/**
++ * Canonical parsing and formatting for numeric display fields.
++ *
++ * THE ONE RULE THIS MODULE EXISTS TO ENFORCE:
++ *   Never strip non-digit characters from a string and re-parse the remainder.
++ *
++ * `"422-458".replace(/[^0-9]/g, "")` yields `"422458"`. That is not a
++ * sanitised number, it is two numbers welded together, and it silently
++ * inflated a headcount by three orders of magnitude in production.
++ * Everything below tokenises numbers individually and refuses to merge them.
++ */
++
++/** Matches one number token: 1, 40, 1,200, 233.7 - but never spans a separator. */
++const NUM_TOKEN = /\d[\d,]*(?:\.\d+)?/g;
++
++const NULLISH = new Set([
++  "", "null", "n/a", "na", "none", "unknown", "not disclosed", "not available", "-", "—",
++]);
++
++/** Words and symbols that mark a figure as soft rather than reported. */
++const APPROX_MARKERS = /(~|≈|\bc\.|\bca\.|\bcirca\b|\bapprox|\bestimat|\bover\b|\bmore than\b|\bunder\b|\bfewer than\b|\+\s*$)/i;
++
++/**
++ * Decide whether the text sitting between two numbers joins them into a range.
++ * Has to cope with units and currency symbols clinging to each end:
++ * "$109M-$233.7M" leaves a gap of "M-$", "40 to 50" leaves " to ".
++ */
++function isRangeSeparator(gap: string): boolean {
++  const g = gap.trim().toLowerCase();
++  if (g === "") return false;
++  if (/\b(to|and|through)\b/.test(g)) return true;
++  const stripped = g.replace(/[a-z$£€¥%.,\s]/g, "");
++  return stripped === "-" || stripped === "–" || stripped === "—";
++}
++
++export type ParsedNumeric =
++  | { kind: "unknown"; raw: string }
++  | { kind: "exact"; value: number; approx: boolean; raw: string }
++  /**
++   * `parts` is source order. `low`/`high` are numerically sorted and are only
++   * meaningful for unitless quantities such as headcount - for money, "$950M-$1.2B"
++   * sorts to low=1.2 which is nonsense. Money callers should use `kind` alone.
++   */
++  | { kind: "range"; low: number; high: number; parts: [number, number]; raw: string }
++  | { kind: "unparseable"; raw: string; reason: string };
++
++/**
++ * Pull out every number in a string as a separate value.
++ * "10,000-12,000" -> [10000, 12000]. Never [1000012000].
++ */
++export function numericTokens(raw: unknown): number[] {
++  const s = String(raw ?? "");
++  const out: number[] = [];
++  for (const m of s.matchAll(NUM_TOKEN)) {
++    const n = Number(m[0].replace(/,/g, ""));
++    if (Number.isFinite(n)) out.push(n);
++  }
++  return out;
++}
++
++export function isNullish(raw: unknown): boolean {
++  if (raw == null) return true;
++  return NULLISH.has(String(raw).trim().toLowerCase());
++}
++
++/**
++ * Parse a human-written count. Deliberately conservative: anything it is not
++ * confident about comes back `unparseable` and must be rendered verbatim
++ * rather than guessed at.
++ */
++export function parseNumericField(raw: unknown): ParsedNumeric {
++  const s = String(raw ?? "").trim();
++  if (isNullish(s)) return { kind: "unknown", raw: s };
++
++  const tokens = numericTokens(s);
++  if (tokens.length === 0) return { kind: "unparseable", raw: s, reason: "no digits found" };
++
++  if (tokens.length === 1) {
++    return { kind: "exact", value: tokens[0], approx: APPROX_MARKERS.test(s), raw: s };
++  }
++
++  if (tokens.length === 2) {
++    // Only treat as a range if what sits between the two numbers is a range
++    // separator. "Q3 2024: 500" has two tokens but is not a range.
++    const matches = [...s.matchAll(NUM_TOKEN)];
++    const gap = s.slice(matches[0].index! + matches[0][0].length, matches[1].index!);
++    if (isRangeSeparator(gap)) {
++      const [low, high] = tokens[0] <= tokens[1] ? [tokens[0], tokens[1]] : [tokens[1], tokens[0]];
++      return { kind: "range", low, high, parts: [tokens[0], tokens[1]], raw: s };
++    }
++    return { kind: "unparseable", raw: s, reason: "two numbers with no range separator" };
++  }
++
++  return { kind: "unparseable", raw: s, reason: `${tokens.length} numbers found` };
++}
++
++// ─── Headcount ────────────────────────────────────────────────────────────────
++
++/** Walmart, the largest private employer on earth, is ~2.1M. Anything above this is a parse bug. */
++export const MAX_PLAUSIBLE_HEADCOUNT = 3_000_000;
++export const MIN_PLAUSIBLE_HEADCOUNT = 1;
++
++export type Headcount = {
++  /** What to render. Already formatted; renderers must print this verbatim. */
++  display: string;
++  /** True when the figure is a range, approximation or web-search estimate. */
++  isEstimate: boolean;
++  /** Set when the input could not be trusted; surfaces in logs and confidence signals. */
++  warning: string | null;
++};
++
++/**
++ * Normalise a headcount into a canonical display string.
++ * Ranges are PRESERVED and labelled, not silently collapsed - a range is
++ * honest information and collapsing it to its lower bound invents precision.
++ */
++export function normaliseHeadcount(raw: unknown): Headcount | null {
++  const parsed = parseNumericField(raw);
++
++  switch (parsed.kind) {
++    case "unknown":
++      return null;
++
++    case "exact": {
++      const n = parsed.value;
++      if (n < MIN_PLAUSIBLE_HEADCOUNT || n > MAX_PLAUSIBLE_HEADCOUNT) {
++        return {
++          display: parsed.raw,
++          isEstimate: true,
++          warning: `headcount ${n} outside plausible range ${MIN_PLAUSIBLE_HEADCOUNT}-${MAX_PLAUSIBLE_HEADCOUNT}`,
++        };
++      }
++      return {
++        display: (parsed.approx ? "~" : "") + n.toLocaleString("en-GB"),
++        isEstimate: parsed.approx,
++        warning: null,
++      };
++    }
++
++    case "range": {
++      const { low, high } = parsed;
++      if (high > MAX_PLAUSIBLE_HEADCOUNT || low < MIN_PLAUSIBLE_HEADCOUNT) {
++        return {
++          display: parsed.raw,
++          isEstimate: true,
++          warning: `headcount range ${low}-${high} outside plausible bounds`,
++        };
++      }
++      return {
++        display: `${low.toLocaleString("en-GB")} to ${high.toLocaleString("en-GB")}`,
++        isEstimate: true,
++        warning: null,
++      };
++    }
++
++    case "unparseable":
++      return { display: parsed.raw, isEstimate: true, warning: `unparseable headcount: ${parsed.reason}` };
++  }
++}
++
++// ─── Money ────────────────────────────────────────────────────────────────────
++
++const UNIT_SCALE: Record<string, number> = {
++  k: 1e3, m: 1e6, mm: 1e6, bn: 1e9, b: 1e9, t: 1e12,
++};
++
++/**
++ * Convert "$1.2B" / "£950M" / "€4.6bn" to an absolute number so figures with
++ * different units can be compared. Returns null rather than guessing.
++ *
++ * The old growth calculation did `revenue.replace(/[^0-9.]/g, "")`, which
++ * compares 1.2 against 950 when moving from $950M to $1.2B and reports a
++ * 99.9% collapse in revenue.
++ */
++export function parseMoney(raw: unknown): number | null {
++  const s = String(raw ?? "").trim();
++  if (isNullish(s)) return null;
++
++  const tokens = numericTokens(s);
++  if (tokens.length !== 1) return null; // ranges and multi-value strings are not a scalar
++
++  const m = s.match(/(\d[\d,]*(?:\.\d+)?)\s*(k|mm|m|bn|b|t)?\b/i);
++  if (!m) return null;
++
++  const base = Number(m[1].replace(/,/g, ""));
++  if (!Number.isFinite(base)) return null;
++
++  const unit = (m[2] ?? "").toLowerCase();
++  const scale = unit ? (UNIT_SCALE[unit] ?? 1) : 1;
++  const signed = /^\(|\)$|^-/.test(s) ? -Math.abs(base) : base;
++  return signed * scale;
++}
++
++// ─── Cross-field plausibility ─────────────────────────────────────────────────
++
++/**
++ * Absolute bounds alone cannot catch this bug: 422,458 is a perfectly plausible
++ * headcount in isolation (Amazon-scale). What makes it absurd is that it sits
++ * next to $109M of revenue - about $258 of revenue per employee.
++ *
++ * Revenue per head is the cheapest cross-check available and it catches
++ * order-of-magnitude headcount errors that no single-field rule can see.
++ */
++export const MIN_REVENUE_PER_EMPLOYEE = 10_000;
++export const MAX_REVENUE_PER_EMPLOYEE = 25_000_000;
++
++export function crossCheckHeadcountAgainstRevenue(
++  employees: unknown,
++  revenue: unknown,
++): { ok: boolean; perHead: number | null; message: string | null } {
++  const rev = parseMoney(revenue);
++  const parsed = parseNumericField(employees);
++
++  let heads: number | null = null;
++  if (parsed.kind === "exact") heads = parsed.value;
++  else if (parsed.kind === "range") heads = (parsed.low + parsed.high) / 2;
++
++  if (rev == null || heads == null || heads <= 0) {
++    return { ok: true, perHead: null, message: null };
++  }
++
++  const perHead = rev / heads;
++  if (perHead < MIN_REVENUE_PER_EMPLOYEE) {
++    return {
++      ok: false, perHead,
++      message: `implausible headcount: ${Math.round(heads).toLocaleString("en-GB")} employees against revenue of ${String(revenue)} is ${Math.round(perHead).toLocaleString("en-GB")} per employee - headcount is likely inflated by an order of magnitude`,
++    };
++  }
++  if (perHead > MAX_REVENUE_PER_EMPLOYEE) {
++    return {
++      ok: false, perHead,
++      message: `implausible headcount: ${Math.round(heads).toLocaleString("en-GB")} employees against revenue of ${String(revenue)} is ${Math.round(perHead).toLocaleString("en-GB")} per employee - headcount or revenue unit is likely wrong`,
++    };
++  }
++  return { ok: true, perHead, message: null };
++}
++
++/** Growth between two money strings, unit-aware. Null when either side is not a scalar. */
++export function percentChange(current: unknown, previous: unknown): number | null {
++  const c = parseMoney(current);
++  const p = parseMoney(previous);
++  if (c == null || p == null || p === 0) return null;
++  return ((c - p) / Math.abs(p)) * 100;
++}
+diff --git a/shared/reportFieldRules.ts b/shared/reportFieldRules.ts
+new file mode 100644
+index 0000000..d2c5477
+--- /dev/null
++++ b/shared/reportFieldRules.ts
+@@ -0,0 +1,247 @@
++/**
++ * Registry of every report field that reaches the UI as a number, plus the
++ * machinery to sanitise them in one place.
++ *
++ * WHY THIS EXISTS
++ * The previous headcount guard sanitised `financials.employees`. That path has
++ * never existed - `employees` lives on `executiveSummary`. The guard was dead
++ * code from the day it was written and no test or type error caught it, because
++ * it ran against an `any`-cast object. `assertRulePathsExist()` below closes
++ * that hole: a rule pointing at a path the schema does not define is a build
++ * failure, not a silent no-op.
++ */
++
++import {
++  normaliseHeadcount,
++  parseNumericField,
++  isNullish,
++  crossCheckHeadcountAgainstRevenue,
++} from "./numeric.js";
++
++export type FieldKind = "headcount" | "money" | "percent" | "year" | "money-range-ok";
++
++export type FieldRule = {
++  /** Dot path into ReportData. `[]` marks an array to map over. */
++  path: string;
++  kind: FieldKind;
++  /** Human label used in warnings and confidence signals. */
++  label: string;
++};
++
++/**
++ * Every numeric field rendered as a headline value somewhere in the client or
++ * the HTML/PPTX export. Adding a numeric card to the UI means adding it here.
++ */
++export const NUMERIC_FIELD_RULES: FieldRule[] = [
++  { path: "executiveSummary.employees",            kind: "headcount",      label: "Employees" },
++  { path: "executiveSummary.founded",              kind: "year",           label: "Founded" },
++  { path: "financials.revenue",                    kind: "money",          label: "Revenue" },
++  { path: "financials.netIncome",                  kind: "money",          label: "Net income" },
++  { path: "financials.ebitda",                     kind: "money",          label: "EBITDA" },
++  { path: "financials.marketCap",                  kind: "money",          label: "Market cap" },
++  { path: "financials.stockPrice",                 kind: "money",          label: "Stock price" },
++  { path: "financials.revenueGrowth",              kind: "percent",        label: "Revenue growth" },
++  { path: "financials.revenueHistory[].revenue",   kind: "money",          label: "Revenue history" },
++  { path: "marketAnalysis.totalAddressableMarket", kind: "money-range-ok", label: "TAM" },
++  { path: "marketAnalysis.marketShare",            kind: "percent",        label: "Market share" },
++  { path: "techSpend.annualITBudget",              kind: "money-range-ok", label: "IT budget" },
++  { path: "growthOpportunities.totalOpportunityValue", kind: "money-range-ok", label: "Total opportunity value" },
++  { path: "growthOpportunities.opportunities[].potentialValue", kind: "money-range-ok", label: "Opportunity value" },
++];
++
++export type FieldIssue = {
++  path: string;
++  label: string;
++  severity: "warn" | "error";
++  message: string;
++  before: string;
++  after: string;
++};
++
++// ─── Path helpers ─────────────────────────────────────────────────────────────
++
++type Visit = (holder: Record<string, unknown>, key: string, fullPath: string) => void;
++
++/**
++ * Walk a dot path, expanding `[]` segments across arrays, and visit each leaf holder.
++ *
++ * Distinguishes two kinds of miss, because they mean very different things:
++ *  - `parentMissing`: a container on the way to the field is absent. The model
++ *    dropped a whole section, or a rule points somewhere that does not exist.
++ *  - `keyMissing`: the container is there but the leaf key is not. Usually just
++ *    an optional field the model chose not to populate.
++ */
++function visitPath(
++  root: unknown,
++  path: string,
++  visit: Visit,
++): { visited: number; parentMissing: boolean; keyMissing: boolean } {
++  const segments = path.split(".");
++  let parentMissing = false;
++  let keyMissing = false;
++  let visited = 0;
++
++  const walk = (node: unknown, i: number, acc: string) => {
++    if (node == null || typeof node !== "object") { parentMissing = true; return; }
++
++    const seg = segments[i];
++    const isArray = seg.endsWith("[]");
++    const key = isArray ? seg.slice(0, -2) : seg;
++    const obj = node as Record<string, unknown>;
++    const last = i === segments.length - 1;
++
++    if (last && !isArray) {
++      if (!(key in obj)) { keyMissing = true; return; }
++      visit(obj, key, acc ? `${acc}.${key}` : key);
++      visited++;
++      return;
++    }
++
++    const next = obj[key];
++    if (isArray) {
++      // An empty array is a legitimate result, not a missing container.
++      if (!Array.isArray(next)) { parentMissing = true; return; }
++      next.forEach((el, idx) => walk(el, i + 1, `${acc ? acc + "." : ""}${key}[${idx}]`));
++      visited += next.length === 0 ? 1 : 0;
++      return;
++    }
++    walk(next, i + 1, acc ? `${acc}.${key}` : key);
++  };
++
++  walk(root, 0, "");
++  return { visited, parentMissing, keyMissing };
++}
++
++// ─── Sanitisation ─────────────────────────────────────────────────────────────
++
++/**
++ * Normalise every registered numeric field on a generated report, in place.
++ * Returns the issues found so callers can log them and feed the confidence score.
++ *
++ * Ranges are labelled, never silently collapsed. Implausible values are left
++ * verbatim and flagged rather than coerced into a number that looks credible.
++ */
++export function sanitiseNumericFields(report: unknown): FieldIssue[] {
++  const issues: FieldIssue[] = [];
++
++  for (const rule of NUMERIC_FIELD_RULES) {
++    const { visited, parentMissing, keyMissing } = visitPath(report, rule.path, (holder, key, fullPath) => {
++      const before = String(holder[key] ?? "");
++      if (isNullish(before)) return;
++
++      if (rule.kind === "headcount") {
++        const hc = normaliseHeadcount(before);
++        if (!hc) return;
++        if (hc.display !== before) {
++          holder[key] = hc.display;
++        }
++        if (hc.warning) {
++          issues.push({ path: fullPath, label: rule.label, severity: "error", message: hc.warning, before, after: String(holder[key]) });
++        } else if (hc.isEstimate) {
++          issues.push({ path: fullPath, label: rule.label, severity: "warn", message: "value is an estimate or range", before, after: String(holder[key]) });
++        }
++        return;
++      }
++
++      if (rule.kind === "money" || rule.kind === "percent" || rule.kind === "year") {
++        const parsed = parseNumericField(before);
++        if (parsed.kind === "range") {
++          issues.push({
++            path: fullPath, label: rule.label, severity: "warn",
++            before, after: before,
++            message: `range returned for a single-value field ("${before}") - flagged as estimate, not collapsed`,
++          });
++        } else if (parsed.kind === "unparseable") {
++          issues.push({
++            path: fullPath, label: rule.label, severity: "warn",
++            before, after: before,
++            message: `could not parse as a single ${rule.kind}: ${parsed.reason}`,
++          });
++        } else if (rule.kind === "year" && parsed.kind === "exact") {
++          const y = parsed.value;
++          const thisYear = new Date().getUTCFullYear();
++          if (y < 1600 || y > thisYear) {
++            issues.push({ path: fullPath, label: rule.label, severity: "error", before, after: before, message: `implausible year ${y}` });
++          }
++        }
++        return;
++      }
++      // money-range-ok: ranges are legitimate (TAM, opportunity sizing). No action.
++    });
++
++    if (visited === 0) {
++      // A missing container is a structural failure - the model dropped a whole
++      // section, or this rule is a dead guard pointing at a path that does not
++      // exist. A missing leaf key on a present container is usually just an
++      // optional field the model left out.
++      issues.push({
++        path: rule.path, label: rule.label,
++        severity: parentMissing ? "error" : "warn",
++        before: "", after: "",
++        message: parentMissing
++          ? `container for ${rule.path} is absent - dropped section or dead guard`
++          : `${rule.path} was not populated by the model`,
++      });
++      void keyMissing;
++    }
++  }
++
++  // Cross-field checks. Single-field rules cannot catch an order-of-magnitude
++  // headcount error, because the wrong number is plausible on its own.
++  const r = report as any;
++  const xc = crossCheckHeadcountAgainstRevenue(r?.executiveSummary?.employees, r?.financials?.revenue);
++  if (!xc.ok && xc.message) {
++    issues.push({
++      path: "executiveSummary.employees",
++      label: "Employees vs revenue",
++      severity: "error",
++      before: String(r?.executiveSummary?.employees ?? ""),
++      after: String(r?.executiveSummary?.employees ?? ""),
++      message: xc.message,
++    });
++  }
++
++  return issues;
++}
++
++// ─── Build-time guard against dead rules ──────────────────────────────────────
++
++/**
++ * Assert every rule path exists in the Zod schema. Call this from a test.
++ * This is the check that would have caught `financials.employees`.
++ */
++export function assertRulePathsExist(reportDataSchema: any): string[] {
++  const bad: string[] = [];
++
++  const unwrap = (s: any): any => {
++    let cur = s;
++    for (let i = 0; i < 12 && cur; i++) {
++      const t = cur?._def?.typeName;
++      if (t === "ZodOptional" || t === "ZodNullable" || t === "ZodDefault") { cur = cur._def.innerType; continue; }
++      if (t === "ZodEffects") { cur = cur._def.schema; continue; }
++      return cur;
++    }
++    return cur;
++  };
++
++  for (const rule of NUMERIC_FIELD_RULES) {
++    let cur = unwrap(reportDataSchema);
++    let ok = true;
++
++    for (const seg of rule.path.split(".")) {
++      const isArray = seg.endsWith("[]");
++      const key = isArray ? seg.slice(0, -2) : seg;
++      const shape = cur?._def?.typeName === "ZodObject" ? cur.shape : null;
++      if (!shape || !(key in shape)) { ok = false; break; }
++      cur = unwrap(shape[key]);
++      if (isArray) {
++        if (cur?._def?.typeName !== "ZodArray") { ok = false; break; }
++        cur = unwrap(cur._def.type);
++      }
++    }
++
++    if (!ok) bad.push(rule.path);
++  }
++
++  return bad;
++}
+-- 
+2.43.0
+

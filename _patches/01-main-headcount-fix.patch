@@ -1,0 +1,181 @@
+From 096573504c94ac85f9ff4a046856d941ca95e3dc Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Fri, 14 Aug 2026 08:04:14 +0000
+Subject: [PATCH] fix: employees headcount rendering as a concatenated number
+
+The Summary card stripped every non-digit from executiveSummary.employees
+and reformatted, so any string holding two figures became one absurd
+number: "330,000 342,423" rendered as 330,000,342,423.
+
+- utils: formatHeadcount parses the FIRST numeric group only; used by the
+  Summary card, the PPTX export and the HTML export.
+- claude.ts: normalise executiveSummary.employees server-side, preferring
+  the FMP figure verbatim when available. The old range-stripper targeted
+  financials.employees, a field that does not exist in the Part A schema,
+  so it never ran.
+- claude.ts: stop sending both the FMP and Wikipedia headcount to the
+  model, and require a single number in the prompt.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013o6GmY5zEJ8H8TyuAuqJiT
+---
+ client/src/lib/export.ts       |  8 +++----
+ client/src/lib/utils.ts        | 15 ++++++++++++
+ client/src/pages/Dashboard.tsx |  4 ++--
+ server/claude.ts               | 43 ++++++++++++++++++++++++++--------
+ 4 files changed, 54 insertions(+), 16 deletions(-)
+
+diff --git a/client/src/lib/export.ts b/client/src/lib/export.ts
+index 59b0b92..b98dde4 100644
+--- a/client/src/lib/export.ts
++++ b/client/src/lib/export.ts
+@@ -1,5 +1,5 @@
+ import type { ReportData } from "@shared/schema";
+-import { formatDate } from "./utils";
++import { formatDate, formatHeadcount } from "./utils";
+ 
+ export async function exportToPDF(companyName: string, report?: ReportData): Promise<void> {
+   const { default: jsPDF } = await import("jspdf");
+@@ -81,7 +81,7 @@ function buildFullReportHTML(report: ReportData): string {
+   <p style="color:#94a3b8;line-height:1.6">${esc(es.companyOverview)}</p>
+   <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:1rem 0">
+     <div style="background:#111827;border:1px solid #1e2d3d;border-radius:8px;padding:16px"><div style="font-size:0.75rem;text-transform:uppercase;color:#475569;margin-bottom:4px">CEO</div><div style="font-weight:bold">${val(es.ceo)}</div></div>
+-    <div style="background:#111827;border:1px solid #1e2d3d;border-radius:8px;padding:16px"><div style="font-size:0.75rem;text-transform:uppercase;color:#475569;margin-bottom:4px">Employees</div><div style="font-weight:bold">${val(es.employees)}</div></div>
++    <div style="background:#111827;border:1px solid #1e2d3d;border-radius:8px;padding:16px"><div style="font-size:0.75rem;text-transform:uppercase;color:#475569;margin-bottom:4px">Employees</div><div style="font-weight:bold">${val(formatHeadcount(es.employees))}</div></div>
+     <div style="background:#111827;border:1px solid #1e2d3d;border-radius:8px;padding:16px"><div style="font-size:0.75rem;text-transform:uppercase;color:#475569;margin-bottom:4px">Founded</div><div style="font-weight:bold">${val(es.founded)}</div></div>
+     <div style="background:#111827;border:1px solid #1e2d3d;border-radius:8px;padding:16px"><div style="font-size:0.75rem;text-transform:uppercase;color:#475569;margin-bottom:4px">Headquarters</div><div style="font-weight:bold">${val(es.headquarters)}</div></div>
+   </div>
+@@ -214,7 +214,7 @@ export async function exportToPPTX(report: ReportData): Promise<void> {
+     const fields = [
+       ["CEO", es.ceo],
+       ["Founded", es.founded],
+-      ["Employees", es.employees],
++      ["Employees", formatHeadcount(es.employees)],
+       ["HQ", es.headquarters],
+       ["Exchange", es.stockExchange ?? "Private"],
+     ];
+@@ -513,7 +513,7 @@ export function exportToHTML(report: ReportData): void {
+   <p>${esc(es.companyOverview)}</p>
+   <div class="grid" style="margin-top:1rem">
+     <div class="card"><div class="label">CEO</div><div class="value-sm">${val(es.ceo)}</div></div>
+-    <div class="card"><div class="label">Employees</div><div class="value-sm">${val(es.employees)}</div></div>
++    <div class="card"><div class="label">Employees</div><div class="value-sm">${val(formatHeadcount(es.employees))}</div></div>
+     <div class="card"><div class="label">Founded</div><div class="value-sm">${val(es.founded)}</div></div>
+     <div class="card"><div class="label">Headquarters</div><div class="value-sm">${val(es.headquarters)}</div></div>
+   </div>
+diff --git a/client/src/lib/utils.ts b/client/src/lib/utils.ts
+index b816d11..82a8d60 100644
+--- a/client/src/lib/utils.ts
++++ b/client/src/lib/utils.ts
+@@ -55,3 +55,18 @@ export function getMaturityColor(level: string): string {
+ export function cn(...classes: (string | undefined | false | null)[]): string {
+   return classes.filter(Boolean).join(" ");
+ }
++
++// Headcount strings arrive from the model in many shapes: "330,000",
++// "c. 330,000 employees", "330,000–342,423", "330,000 (FY2024)".
++// Take the FIRST numeric group only - never strip all non-digits from the whole
++// string, which silently concatenates two figures into one absurd number
++// (e.g. "330,000 342,423" -> 330,000,342,423).
++export function formatHeadcount(value: string | number | null | undefined): string {
++  if (value === null || value === undefined || value === "") return "-";
++  const raw = String(value).trim();
++  const match = raw.match(/\d[\d,]*/);
++  if (!match) return raw;
++  const n = parseInt(match[0].replace(/,/g, ""), 10);
++  if (!Number.isFinite(n) || n <= 0 || n > 50_000_000) return raw;
++  return n.toLocaleString("en-GB");
++}
+diff --git a/client/src/pages/Dashboard.tsx b/client/src/pages/Dashboard.tsx
+index e2f7745..e8a2226 100644
+--- a/client/src/pages/Dashboard.tsx
++++ b/client/src/pages/Dashboard.tsx
+@@ -3,7 +3,7 @@ import { useParams, useLocation } from "wouter";
+ import { Layout } from "@/components/Layout";
+ import { api } from "@/lib/api";
+ import { exportToPDF, exportToPPTX, exportToHTML } from "@/lib/export";
+-import { formatDate, getRiskBadge, getMaturityColor, getConfidenceColor } from "@/lib/utils";
++import { formatDate, getRiskBadge, getMaturityColor, getConfidenceColor, formatHeadcount } from "@/lib/utils";
+ import { MetricCard } from "@/components/MetricCard";
+ import { SWOTGrid } from "@/components/SWOTGrid";
+ import { RiskMatrix } from "@/components/RiskMatrix";
+@@ -229,7 +229,7 @@ function SummaryTab({ data }: { data: ReportData }) {
+       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+         <MetricCard label="CEO" value={es.ceo} delay={0} />
+         <MetricCard label="Founded" value={es.founded} delay={80} />
+-        <MetricCard label="Employees" value={es.employees ? (() => { const n = parseInt(String(es.employees).replace(/[^0-9]/g, ""), 10); return isNaN(n) ? es.employees : n.toLocaleString("en-GB"); })() : es.employees} delay={160} />
++        <MetricCard label="Employees" value={formatHeadcount(es.employees)} delay={160} />
+         <MetricCard label="HQ" value={es.headquarters} delay={240} />
+       </div>
+ 
+diff --git a/server/claude.ts b/server/claude.ts
+index 285c53c..6d9d0c6 100644
+--- a/server/claude.ts
++++ b/server/claude.ts
+@@ -810,9 +810,10 @@ Only apply this if you are highly confident ${companyName} is a well-known major
+     : (wikiData
+       ? `\nSUPPLEMENTAL CONTEXT (Wikipedia):
+ - Founded: ${wikiData.founded ?? "N/A"}
+-- Headquarters: ${wikiData.headquarters ?? "N/A"}
+-- Employees: ${wikiData.employees ?? "N/A"}
+-- Website: ${wikiData.website ?? "N/A"}`
++- Headquarters: ${wikiData.headquarters ?? "N/A"}${fin?.employees ? "" : `
++- Employees: ${wikiData.employees ?? "N/A"}`}
++- Website: ${wikiData.website ?? "N/A"}
++Note: employees is stated once above - return a SINGLE headcount number, never a range, a second figure, or a parenthetical.`
+       : "");
+ 
+   const socialBlock = socialContext
+@@ -1190,13 +1191,6 @@ export async function generateReport(companyName: string): Promise<unknown> {
+       console.warn(`⚠️  Revenue range detected ("${f.revenue}") - using first value: "${first}"`);
+       f.revenue = first;
+     }
+-    if (typeof f.employees === 'string' && (f.employees.includes('–') || f.employees.includes('-') || f.employees.includes('+'))) {
+-      const first = f.employees.split(/[–\-+]/)[0].replace(/[^0-9,]/g, '').trim();
+-      if (first) {
+-        console.warn(`⚠️  Employees range detected ("${f.employees}") - using first value: "${first}"`);
+-        f.employees = first;
+-      }
+-    }
+     // Warn if revenue history is too short
+     const histLen = Array.isArray(f.revenueHistory) ? f.revenueHistory.length : 0;
+     if (histLen < 2) {
+@@ -1204,6 +1198,35 @@ export async function generateReport(companyName: string): Promise<unknown> {
+     }
+   }
+ 
++  // Normalise headcount. The model returns shapes like "330,000", "c. 330,000",
++  // "330,000–342,423" or "330,000 (342,423 incl. franchises)". Keep the first
++  // numeric group only - anything else gets mangled downstream.
++  if (partATyped?.executiveSummary) {
++    const es = partATyped.executiveSummary;
++    if (financials?.employees) {
++      // FMP is authoritative - don't let the model pick between conflicting sources
++      const fmpCount = String(financials.employees).replace(/[^0-9]/g, '');
++      if (fmpCount && String(es.employees ?? '').replace(/[^0-9]/g, '') !== fmpCount) {
++        console.warn(`⚠️  Employees "${es.employees}" replaced with FMP figure ${financials.employees}`);
++      }
++      es.employees = Number(fmpCount).toLocaleString('en-GB');
++    } else if (es.employees != null && es.employees !== '') {
++      const raw = String(es.employees).trim();
++      const match = raw.match(/\d[\d,]*/);
++      const n = match ? parseInt(match[0].replace(/,/g, ''), 10) : NaN;
++      if (Number.isFinite(n) && n > 0 && n <= 50_000_000) {
++        const normalised = n.toLocaleString('en-GB');
++        if (normalised !== raw) {
++          console.warn(`⚠️  Employees normalised: "${raw}" - using ${normalised}`);
++        }
++        es.employees = normalised;
++      } else {
++        console.warn(`⚠️  Employees value not a usable count ("${raw}") - setting null`);
++        es.employees = null;
++      }
++    }
++  }
++
+   const confidence = computeConfidence(partA, partB, financials, fmpData.esg, currentCEO, wikiData);
+ 
+   const financialsMeta: FinancialsMetadata = (() => {
+-- 
+2.43.0
+
