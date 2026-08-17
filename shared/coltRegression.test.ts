@@ -74,3 +74,41 @@ console.log(`  ${crossCheck ? "❌ " + crossCheck.message : "not caught"}`);
 assert.ok(crossCheck, "revenue-per-head cross-check must catch a plausible-looking but wrong headcount");
 
 console.log("\nAll Colt regression assertions passed\n");
+
+// ─── Part A / Part B split ────────────────────────────────────────────────────
+// The generator builds a report from two model calls. executiveSummary,
+// financials and marketAnalysis come from Part A; techSpend, growthOpportunities,
+// esg, swot, riskAssessment and digitalTransformation come from Part B.
+//
+// The registry was first wired to validate Part A alone. Three rules then
+// reported their containers as absent on every single report, and because those
+// are errors the confidence signal failed, forcing every report to red. A guard
+// pointed at paths missing from the object it was handed - the exact failure
+// this registry exists to prevent, reproduced by its own wiring.
+
+const partAOnly = () => ({
+  executiveSummary: { employees: "450", founded: "2010" },
+  financials: { revenue: "$100M-$500M", netIncome: null, ebitda: null, marketCap: null, revenueGrowth: null, revenueHistory: [] },
+  marketAnalysis: { totalAddressableMarket: null, marketShare: null },
+});
+const partBOnly = () => ({
+  techSpend: { annualITBudget: null },
+  growthOpportunities: { totalOpportunityValue: "$3.5-8.1B", opportunities: [{ potentialValue: "$2-5B" }] },
+});
+
+console.log("\n─── Part A alone: reproduces the false errors ───");
+const aOnly = sanitiseNumericFields(partAOnly());
+const falseErrors = aOnly.filter(i => i.severity === "error");
+for (const i of falseErrors) console.log(`  ❌ ${i.path}: ${i.message}`);
+assert.equal(falseErrors.length, 3, "expected the three Part B containers to be reported absent");
+
+console.log("\n─── Merged report: clean ───");
+const merged: any = { ...partAOnly(), ...partBOnly() };
+const mergedIssues = sanitiseNumericFields(merged);
+const realErrors = mergedIssues.filter(i => i.severity === "error");
+for (const i of mergedIssues) console.log(`  ${i.severity === "error" ? "❌" : "⚠️ "} ${i.path}: ${i.message}`);
+assert.equal(realErrors.length, 0, "a well-formed merged report must raise no errors");
+assert.ok(mergedIssues.some(i => i.path === "financials.revenue" && /range returned/.test(i.message)),
+  "the 5x revenue range must now reach the validator instead of being truncated upstream");
+
+console.log("\nPart A/B split assertions passed\n");

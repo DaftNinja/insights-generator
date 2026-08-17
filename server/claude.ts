@@ -1191,20 +1191,17 @@ export async function generateReport(companyName: string): Promise<unknown> {
 
   console.log(`✅ Report generated in ${((Date.now() - start) / 1000).toFixed(1)}s (FMP + Wiki + CEO + Haiku x2)`);
 
-  // Sanitise LLM financial output - reject ranges and USD for known UK companies
+  // Revenue history length is a rendering concern, not a value check - the
+  // numeric registry below owns every value-level rule.
+  //
+  // The legacy revenue guard that lived here truncated "$100M-$500M" to
+  // "$100M" before anything else could see it, which hid a 5x uncertainty
+  // behind a figure that looked precise. Ranges are now flagged, not collapsed.
   const partATyped = partA as any;
   if (partATyped?.financials) {
-    const f = partATyped.financials;
-    // If revenue contains a range, strip to the first value. Covers hyphen,
-    // en dash and em dash - the comment used to claim em dash but the pattern
-    // never included one.
-    if (typeof f.revenue === 'string' && /[\u2014\u2013-]/.test(f.revenue)) {
-      const first = f.revenue.split(/[\u2014\u2013-]/)[0].trim();
-      console.warn(`⚠️  Revenue range detected ("${f.revenue}") - using first value: "${first}"`);
-      f.revenue = first;
-    }
-    // Warn if revenue history is too short
-    const histLen = Array.isArray(f.revenueHistory) ? f.revenueHistory.length : 0;
+    const histLen = Array.isArray(partATyped.financials.revenueHistory)
+      ? partATyped.financials.revenueHistory.length
+      : 0;
     if (histLen < 2) {
       console.warn(`⚠️  Revenue history only ${histLen} entr${histLen === 1 ? 'y' : 'ies'} for ${companyName} - chart will be sparse`);
     }
@@ -1250,7 +1247,14 @@ export async function generateReport(companyName: string): Promise<unknown> {
   // tests - makes a guard that points at a non-existent schema path a test
   // failure rather than silent dead code, which is how the original bug lived
   // for as long as it did.
-  const numericIssues = sanitiseNumericFields(partATyped);
+  // Merge before validating. techSpend and growthOpportunities come from Part B,
+  // so running the registry against Part A alone reported their containers as
+  // absent on every report - a guard pointed at paths missing from the object it
+  // was handed, which is the exact failure this registry exists to prevent.
+  // The spread is shallow, so nested objects are shared and mutations made here
+  // are visible through partA/partB below.
+  const mergedReport: any = { ...(partA as object), ...(partB as object) };
+  const numericIssues = sanitiseNumericFields(mergedReport);
   for (const issue of numericIssues) {
     const changed = issue.before !== issue.after ? ` (normalised "${issue.before}" -> "${issue.after}")` : "";
     const line = `[${issue.label}] ${issue.path}: ${issue.message}${changed}`;
@@ -1326,7 +1330,7 @@ export async function generateReport(companyName: string): Promise<unknown> {
     }
   }
 
-  return { ...(partA as object), ...(partB as object), confidence, _financialsMeta: financialsMeta };
+  return { ...mergedReport, confidence, _financialsMeta: financialsMeta };
 }
 
 // ─── Sales Enablement ─────────────────────────────────────────────────────────
