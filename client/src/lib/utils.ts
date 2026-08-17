@@ -1,3 +1,4 @@
+import { normaliseHeadcount } from "@shared/numeric";
 export function formatDate(date: string | Date | null | undefined): string {
   if (!date) return "-";
   const d = new Date(date);
@@ -56,17 +57,16 @@ export function cn(...classes: (string | undefined | false | null)[]): string {
   return classes.filter(Boolean).join(" ");
 }
 
+// Headcount is normalised server-side; this is belt-and-braces for cached
+// reports generated before that landed. Delegates to the shared parser so
+// client and server can never disagree about the same value.
 // Headcount strings arrive from the model in many shapes: "330,000",
 // "c. 330,000 employees", "330,000–342,423", "330,000 (FY2024)".
 // Take the FIRST numeric group only - never strip all non-digits from the whole
 // string, which silently concatenates two figures into one absurd number
 // (e.g. "330,000 342,423" -> 330,000,342,423).
 export function formatHeadcount(value: string | number | null | undefined): string {
-  if (value === null || value === undefined || value === "") return "-";
-  const raw = String(value).trim();
-  const match = raw.match(/\d[\d,]*/);
-  if (!match) return raw;
-  const n = parseInt(match[0].replace(/,/g, ""), 10);
-  if (!Number.isFinite(n) || n <= 0 || n > 50_000_000) return raw;
-  return n.toLocaleString("en-GB");
+  const hc = normaliseHeadcount(value);
+  return hc ? hc.display : "-";
 }
+
